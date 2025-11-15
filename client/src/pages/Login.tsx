@@ -1,0 +1,150 @@
+import { useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
+import { api } from "../lib/api";
+
+export default function Login() {
+  const nav = useNavigate();
+
+  const [role, setRole] = useState<"student" | "admin">("student");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setErr("");
+    setLoading(true);
+
+    try {
+      const out = await api("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password, role })
+      });
+
+      if (out.success) {
+        localStorage.setItem("access", out.token);
+        localStorage.setItem("role", out.user.role || role);
+        localStorage.setItem("fullName", out.user.fullName);
+        localStorage.setItem("email", out.user.email);
+
+        nav("/dashboard");
+      } else {
+        setErr(out.message || "Invalid credentials. Try again.");
+      }
+    } catch (error) {
+      console.error(error);
+      setErr("Server error. Please try again later.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoRegister = () => {
+    nav("/register");
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-md p-8">
+        <div className="text-center mb-8">
+          <div className="inline-block bg-blue-600 text-white rounded-full p-4 mb-4">
+            <svg
+              className="w-12 h-12"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">CARPATH</h1>
+          <p className="text-gray-600">Career Path Recommender System</p>
+        </div>
+
+        {err && (
+          <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+            {err}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label htmlFor="role" className="block text-gray-700 mb-2">
+              Login as
+            </label>
+            <select
+              id="role"
+              value={role}
+              onChange={(e) => setRole(e.target.value as "student" | "admin")}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+            >
+              <option value="student">Student</option>
+              <option value="admin">Admin / Counselor</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="email" className="block text-gray-700 mb-2">
+              Email
+            </label>
+            <input
+              type="email"
+              id="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="your.email@example.com"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="password" className="block text-gray-700 mb-2">
+              Password
+            </label>
+            <input
+              type="password"
+              id="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {loading ? "Signing in..." : "Sign In"}
+          </button>
+        </form>
+
+        <p className="text-center text-gray-600 mt-6 text-sm">
+          Enter your CARPATH account credentials to continue.
+        </p>
+
+        <div className="mt-4 text-center">
+          <p className="text-gray-600 text-sm mb-2">
+            Don&apos;t have an account yet?
+          </p>
+          <button
+            type="button"
+            onClick={handleGoRegister}
+            className="text-sm font-medium text-blue-600 hover:text-blue-700"
+          >
+            Create an account
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
