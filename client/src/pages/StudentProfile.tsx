@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface StudentProfileProps {
   user: {
@@ -8,36 +8,207 @@ interface StudentProfileProps {
   };
 }
 
+interface StudentProfileData {
+  firstName: string;
+  lastName: string;
+  email: string;
+  studentId: string;
+  grade: string;
+  section: string;
+  gender: string;
+  birthDate: string; // yyyy-MM-dd
+  contactNumber: string;
+  address: string;
+  guardianName: string;
+  guardianContact: string;
+  interests: string;
+  strengths: string;
+  hobbies: string;
+}
+
+interface ApiProfileResponse {
+  success?: boolean;
+  message?: string;
+  data?: Partial<
+    StudentProfileData & {
+      gradeLevel?: string;
+    }
+  >;
+}
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:9007/api";
+
+const emptyProfile: StudentProfileData = {
+  firstName: "",
+  lastName: "",
+  email: "",
+  studentId: "",
+  grade: "",
+  section: "",
+  gender: "",
+  birthDate: "",
+  contactNumber: "",
+  address: "",
+  guardianName: "",
+  guardianContact: "",
+  interests: "",
+  strengths: "",
+  hobbies: ""
+};
+
 export default function StudentProfile({ user }: StudentProfileProps) {
-  const [profile, setProfile] = useState({
-    firstName: "John",
-    lastName: "Doe",
-    email: user.email,
-    studentId: "STU2024001",
-    grade: "10",
-    section: "A",
-    gender: "Male",
-    birthDate: "2009-05-15",
-    contactNumber: "+63 912 345 6789",
-    address: "123 Main Street, Quezon City",
-    guardianName: "Jane Doe",
-    guardianContact: "+63 912 345 6788",
-    interests: "Science, Technology, Mathematics",
-    strengths: "Problem solving, Critical thinking",
-    hobbies: "Programming, Reading, Chess"
+  const [profile, setProfile] = useState<StudentProfileData>({
+    ...emptyProfile,
+    email: user.email
   });
-
   const [isEditing, setIsEditing] = useState(false);
+  const [isNewProfile, setIsNewProfile] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleChange = (field: string, value: string) => {
-    setProfile({ ...profile, [field]: value });
+  const mergeProfileFromApi = (payload: ApiProfileResponse | null): void => {
+    if (!payload) return;
+
+    const raw = (payload.data ?? {}) as ApiProfileResponse["data"];
+
+    setProfile((prev) => ({
+      ...prev,
+      firstName: raw?.firstName ?? "",
+      lastName: raw?.lastName ?? "",
+      email: raw?.email ?? user.email,
+      studentId: raw?.studentId ?? "",
+      grade: raw?.gradeLevel ?? raw?.grade ?? "",
+      section: raw?.section ?? "",
+      gender: raw?.gender ?? "",
+      birthDate: raw?.birthDate ? String(raw.birthDate).slice(0, 10) : "",
+      contactNumber: raw?.contactNumber ?? "",
+      address: raw?.address ?? "",
+      guardianName: raw?.guardianName ?? "",
+      guardianContact: raw?.guardianContact ?? "",
+      interests: raw?.interests ?? "",
+      strengths: raw?.strengths ?? "",
+      hobbies: raw?.hobbies ?? ""
+    }));
   };
 
-  const handleSave = () => {
-    setIsEditing(false);
-    // In real app, save to backend
-    alert("Profile updated successfully!");
+  // Fetch profile on mount
+  useEffect(() => {
+    const fetchProfile = async (): Promise<void> => {
+      setLoading(true);
+      setError(null);
+
+      const token = localStorage.getItem("token");
+      if (!token) {
+        setError("Not authenticated");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/students/me`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        if (res.status === 404) {
+          // Walang profile pa → force edit with mostly blank fields
+          setProfile((prev) => ({
+            ...prev,
+            email: user.email
+          }));
+          setIsNewProfile(true);
+          setIsEditing(true);
+          setLoading(false);
+          return;
+        }
+
+        if (!res.ok) {
+          throw new Error(`Failed to load profile (${res.status})`);
+        }
+
+        const body = (await res.json()) as ApiProfileResponse;
+        mergeProfileFromApi(body);
+
+        setIsNewProfile(false);
+        setIsEditing(false);
+      } catch (err: unknown) {
+        console.error(err);
+        if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError("Failed to load profile");
+        }
+        // optional: allow edit anyway for fallback
+        setIsEditing(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void fetchProfile();
+  }, [user.email]);
+
+  const handleChange = (
+    field: keyof StudentProfileData,
+    value: string
+  ): void => {
+    setProfile((prev) => ({ ...prev, [field]: value }));
   };
+
+  const handleSave = async (): Promise<void> => {
+    setSaving(true);
+    setError(null);
+
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setError("Not authenticated");
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/students/me`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(profile)
+      });
+
+      if (!res.ok) {
+        const body = (await res.json()) as ApiProfileResponse;
+        throw new Error(
+          body.message ?? `Failed to save profile (${res.status})`
+        );
+      }
+
+      const body = (await res.json()) as ApiProfileResponse;
+      mergeProfileFromApi(body);
+
+      setIsNewProfile(false);
+      setIsEditing(false);
+      alert("Profile updated successfully!");
+    } catch (err: unknown) {
+      console.error(err);
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Failed to save profile");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="text-gray-600">Loading profile...</div>;
+  }
+
+  const canToggleEdit = !isNewProfile;
 
   return (
     <div className="max-w-4xl">
@@ -45,16 +216,31 @@ export default function StudentProfile({ user }: StudentProfileProps) {
         <div>
           <h2 className="text-gray-900 mb-2">Student Profile</h2>
           <p className="text-gray-600">Manage your personal information</p>
+          {isNewProfile && (
+            <p className="text-sm text-orange-600 mt-1">
+              Please complete your profile to continue using CARPATH.
+            </p>
+          )}
+          {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
         </div>
         <button
-          onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
+          onClick={() => (isEditing ? void handleSave() : setIsEditing(true))}
+          disabled={saving || (!canToggleEdit && !isEditing)}
           className={`px-6 py-2 rounded-lg transition-colors ${
             isEditing
               ? "bg-green-600 hover:bg-green-700 text-white"
-              : "bg-blue-600 hover:bg-blue-700 text-white"
+              : canToggleEdit
+              ? "bg-blue-600 hover:bg-blue-700 text-white"
+              : "bg-gray-400 text-white cursor-not-allowed"
           }`}
         >
-          {isEditing ? "Save Changes" : "Edit Profile"}
+          {isEditing
+            ? saving
+              ? "Saving..."
+              : "Save Changes"
+            : isNewProfile
+            ? "Fill Profile"
+            : "Edit Profile"}
         </button>
       </div>
 
@@ -79,11 +265,15 @@ export default function StudentProfile({ user }: StudentProfileProps) {
             </div>
             <div className="text-white">
               <h3>
-                {profile.firstName} {profile.lastName}
+                {profile.firstName || "Your"} {profile.lastName || "Name"}
               </h3>
-              <p className="text-blue-100">Student ID: {profile.studentId}</p>
               <p className="text-blue-100">
-                Grade {profile.grade} - Section {profile.section}
+                Student ID: {profile.studentId || "Not set yet"}
+              </p>
+              <p className="text-blue-100">
+                {profile.grade && profile.section
+                  ? `Grade ${profile.grade} - Section ${profile.section}`
+                  : "No grade/section set"}
               </p>
             </div>
           </div>
@@ -125,6 +315,7 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                   disabled={!isEditing}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none disabled:bg-gray-50"
                 >
+                  <option value="">Select gender</option>
                   <option>Male</option>
                   <option>Female</option>
                   <option>Other</option>
@@ -156,9 +347,8 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 <input
                   type="email"
                   value={profile.email}
-                  onChange={(e) => handleChange("email", e.target.value)}
-                  disabled={!isEditing}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none disabled:bg-gray-50"
+                  disabled
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500"
                 />
               </div>
               <div>

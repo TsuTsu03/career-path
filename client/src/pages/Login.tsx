@@ -1,11 +1,29 @@
+// client/src/pages/Login.tsx
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 
+type UserRole = "student" | "admin";
+
+interface LoginUser {
+  role: UserRole;
+  fullName: string;
+  email: string;
+}
+
+interface LoginResponse {
+  success: boolean;
+  token: string;
+  user: LoginUser;
+  message?: string;
+}
+
+const TOKEN_KEY = "access";
+
 export default function Login() {
   const nav = useNavigate();
 
-  const [role, setRole] = useState<"student" | "admin">("student");
+  const [role, setRole] = useState<UserRole>("student");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
@@ -17,20 +35,29 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const out = await api("/auth/login", {
+      const out = (await api("/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password, role })
-      });
+      })) as LoginResponse;
 
-      if (out.success) {
-        localStorage.setItem("access", out.token);
-        localStorage.setItem("role", out.user.role || role);
+      if (out.success && out.token && out.user) {
+        // save auth info
+        localStorage.setItem(TOKEN_KEY, out.token);
+        localStorage.setItem("role", out.user.role ?? role);
         localStorage.setItem("fullName", out.user.fullName);
         localStorage.setItem("email", out.user.email);
 
-        nav("/dashboard");
+        // optional: keep a single JSON copy of the user
+        localStorage.setItem("currentUser", JSON.stringify(out.user));
+
+        // redirect based on role
+        const effectiveRole: UserRole = out.user.role ?? role;
+        const targetPath =
+          effectiveRole === "admin" ? "/dashboard" : "/student/dashboard";
+
+        nav(targetPath);
       } else {
-        setErr(out.message || "Invalid credentials. Try again.");
+        setErr(out.message ?? "Invalid credentials. Try again.");
       }
     } catch (error) {
       console.error(error);
@@ -81,7 +108,7 @@ export default function Login() {
             <select
               id="role"
               value={role}
-              onChange={(e) => setRole(e.target.value as "student" | "admin")}
+              onChange={(e) => setRole(e.target.value as UserRole)}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
             >
               <option value="student">Student</option>

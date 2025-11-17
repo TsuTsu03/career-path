@@ -1,12 +1,11 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import AccountSettings from "./AccountSettings";
 import Announcements from "./Announcements";
 import StudentProfile from "./StudentProfile";
 import Assessment from "./Assessment";
 import StudentQueries from "./StudentQueries";
-import TrackRecommendations, {
-  type AssessmentResults
-} from "./TrackRecommendations";
+import TrackRecommendations from "./TrackRecommendations";
 
 interface StudentDashboardProps {
   user: {
@@ -16,6 +15,7 @@ interface StudentDashboardProps {
     email: string;
   };
   onLogout: () => void;
+  initialView?: StudentView;
 }
 
 type StudentView =
@@ -29,17 +29,51 @@ type StudentView =
 
 export default function StudentDashboard({
   user,
-  onLogout
+  onLogout,
+  initialView = "dashboard"
 }: StudentDashboardProps) {
-  const [activeView, setActiveView] = useState<StudentView>("dashboard");
-  const [assessmentCompleted, setAssessmentCompleted] = useState(false);
-  const [assessmentResults, setAssessmentResults] =
-    useState<AssessmentResults | null>(null);
+  const navigate = useNavigate();
 
-  const handleAssessmentComplete = (results: AssessmentResults) => {
+  const [activeView, setActiveView] = useState<StudentView>(initialView);
+  const [assessmentCompleted, setAssessmentCompleted] = useState(
+    initialView === "recommendations"
+  );
+
+  const handleNavigation = (view: StudentView) => {
+    setActiveView(view);
+
+    switch (view) {
+      case "dashboard":
+        navigate("/student/dashboard");
+        break;
+      case "profile":
+        navigate("/student/profile");
+        break;
+      case "assessment":
+        navigate("/student/assessment");
+        break;
+      case "recommendations":
+        navigate("/student/tracks");
+        break;
+      case "queries":
+        navigate("/student/queries");
+        break;
+      case "settings":
+        navigate("/account-settings");
+        break;
+      case "announcements":
+        navigate("/announcements");
+        break;
+      default:
+        navigate("/student/dashboard");
+    }
+  };
+
+  // Optional: kung gusto mong i-toggle yung “Completed” step sa progress
+  const handleAssessmentComplete = () => {
     setAssessmentCompleted(true);
-    setAssessmentResults(results);
-    setActiveView("recommendations");
+    // current flow mo: redirect to /student/assessment/result
+    navigate("/student/assessment/result");
   };
 
   const renderContent = () => {
@@ -47,9 +81,12 @@ export default function StudentDashboard({
       case "profile":
         return <StudentProfile user={user} />;
       case "assessment":
+        // depende sa implementation mo ng Assessment:
+        // kung may onComplete prop, pass it; kung wala, alisin yung prop na 'yan
         return <Assessment onComplete={handleAssessmentComplete} />;
       case "recommendations":
-        return <TrackRecommendations assessmentResults={assessmentResults} />;
+        // ❗ WALA NANG PROP – TrackRecommendations na ang bahala mag-fetch sa backend
+        return <TrackRecommendations />;
       case "queries":
         return <StudentQueries userId={user.id} />;
       case "settings":
@@ -59,7 +96,7 @@ export default function StudentDashboard({
       default:
         return (
           <DashboardHome
-            onNavigate={setActiveView}
+            onNavigate={handleNavigation}
             assessmentCompleted={assessmentCompleted}
           />
         );
@@ -111,7 +148,7 @@ export default function StudentDashboard({
         <aside className="w-64 bg-white min-h-screen shadow-sm">
           <nav className="p-4 space-y-2">
             <button
-              onClick={() => setActiveView("dashboard")}
+              onClick={() => handleNavigation("dashboard")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeView === "dashboard"
                   ? "bg-blue-50 text-blue-600"
@@ -135,7 +172,7 @@ export default function StudentDashboard({
             </button>
 
             <button
-              onClick={() => setActiveView("profile")}
+              onClick={() => handleNavigation("profile")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeView === "profile"
                   ? "bg-blue-50 text-blue-600"
@@ -159,7 +196,7 @@ export default function StudentDashboard({
             </button>
 
             <button
-              onClick={() => setActiveView("assessment")}
+              onClick={() => handleNavigation("assessment")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeView === "assessment"
                   ? "bg-blue-50 text-blue-600"
@@ -183,7 +220,7 @@ export default function StudentDashboard({
             </button>
 
             <button
-              onClick={() => setActiveView("recommendations")}
+              onClick={() => handleNavigation("recommendations")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeView === "recommendations"
                   ? "bg-blue-50 text-blue-600"
@@ -207,7 +244,7 @@ export default function StudentDashboard({
             </button>
 
             <button
-              onClick={() => setActiveView("announcements")}
+              onClick={() => handleNavigation("announcements")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeView === "announcements"
                   ? "bg-blue-50 text-blue-600"
@@ -231,7 +268,7 @@ export default function StudentDashboard({
             </button>
 
             <button
-              onClick={() => setActiveView("queries")}
+              onClick={() => handleNavigation("queries")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeView === "queries"
                   ? "bg-blue-50 text-blue-600"
@@ -255,7 +292,7 @@ export default function StudentDashboard({
             </button>
 
             <button
-              onClick={() => setActiveView("settings")}
+              onClick={() => handleNavigation("settings")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeView === "settings"
                   ? "bg-blue-50 text-blue-600"
