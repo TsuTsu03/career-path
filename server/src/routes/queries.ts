@@ -1,34 +1,17 @@
-import express from "express";
+// server/src/routes/queries.ts
+import { Router } from "express";
+import { requireAuth } from "../middleware/auth.js";
+import {
+  createQuery,
+  getQueries,
+  answerQuery
+} from "../controllers/queryController.js";
 
-const router = express.Router();
+const router = Router();
 
-// GET /api/queries?userId=...
-router.get("/", async (req, res) => {
-  const { userId } = req.query;
-  // TODO: filter by student counselor/admin view
-  return res.json({
-    success: true,
-    queries: [],
-    userId
-  });
-});
-
-// POST /api/queries
-router.post("/", async (req, res) => {
-  // TODO: create new query from student
-  return res.status(201).json({
-    success: true,
-    message: "Query submitted"
-  });
-});
-
-// PATCH /api/queries/:id/reply
-router.patch("/:id/reply", async (req, res) => {
-  // TODO: save counselor response
-  return res.json({
-    success: true,
-    message: "Query answered"
-  });
-});
+// All routes require auth; role checks are inside controller
+router.get("/", requireAuth, getQueries);
+router.post("/", requireAuth, createQuery);
+router.patch("/:id/reply", requireAuth, answerQuery);
 
 export default router;

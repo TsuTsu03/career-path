@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import AdminStudentManagement from "./AdminStudentManagement";
 import AdminCareerTracks from "./AdminCareerTracks";
 import AdminQueryManagement from "./AdminQueryManagement";
 import AdminAnnouncements from "./AdminAnnouncements";
 import AccountSettings from "./AccountSettings";
 
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:9007";
 interface AdminDashboardProps {
   user: {
     id: string;
@@ -13,9 +15,10 @@ interface AdminDashboardProps {
     email: string;
   };
   onLogout: () => void;
+  initialView?: AdminView;
 }
 
-type AdminView =
+export type AdminView =
   | "dashboard"
   | "students"
   | "tracks"
@@ -25,9 +28,38 @@ type AdminView =
 
 export default function AdminDashboard({
   user,
-  onLogout
+  onLogout,
+  initialView = "dashboard"
 }: AdminDashboardProps) {
-  const [activeView, setActiveView] = useState<AdminView>("dashboard");
+  const [activeView, setActiveView] = useState<AdminView>(initialView);
+  const navigate = useNavigate();
+
+  const handleNavigation = (view: AdminView) => {
+    setActiveView(view);
+
+    switch (view) {
+      case "dashboard":
+        navigate("/admin/dashboard");
+        break;
+      case "students":
+        navigate("/admin/students");
+        break;
+      case "tracks":
+        navigate("/admin/career-tracks");
+        break;
+      case "queries":
+        navigate("/admin/queries");
+        break;
+      case "announcements":
+        navigate("/admin/announcements");
+        break;
+      case "settings":
+        navigate("/account-settings");
+        break;
+      default:
+        navigate("/admin/dashboard");
+    }
+  };
 
   const renderContent = () => {
     switch (activeView) {
@@ -44,7 +76,7 @@ export default function AdminDashboard({
       default:
         return (
           <AdminDashboardHome
-            onNavigate={(view: AdminView) => setActiveView(view)}
+            onNavigate={(view: AdminView) => handleNavigation(view)}
           />
         );
     }
@@ -95,7 +127,7 @@ export default function AdminDashboard({
         <aside className="w-64 bg-white min-h-screen shadow-sm">
           <nav className="p-4 space-y-2">
             <button
-              onClick={() => setActiveView("dashboard")}
+              onClick={() => handleNavigation("dashboard")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeView === "dashboard"
                   ? "bg-purple-50 text-purple-600"
@@ -119,7 +151,7 @@ export default function AdminDashboard({
             </button>
 
             <button
-              onClick={() => setActiveView("students")}
+              onClick={() => handleNavigation("students")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeView === "students"
                   ? "bg-purple-50 text-purple-600"
@@ -143,7 +175,7 @@ export default function AdminDashboard({
             </button>
 
             <button
-              onClick={() => setActiveView("tracks")}
+              onClick={() => handleNavigation("tracks")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeView === "tracks"
                   ? "bg-purple-50 text-purple-600"
@@ -167,7 +199,7 @@ export default function AdminDashboard({
             </button>
 
             <button
-              onClick={() => setActiveView("queries")}
+              onClick={() => handleNavigation("queries")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeView === "queries"
                   ? "bg-purple-50 text-purple-600"
@@ -191,7 +223,7 @@ export default function AdminDashboard({
             </button>
 
             <button
-              onClick={() => setActiveView("announcements")}
+              onClick={() => handleNavigation("announcements")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeView === "announcements"
                   ? "bg-purple-50 text-purple-600"
@@ -215,7 +247,7 @@ export default function AdminDashboard({
             </button>
 
             <button
-              onClick={() => setActiveView("settings")}
+              onClick={() => handleNavigation("settings")}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeView === "settings"
                   ? "bg-purple-50 text-purple-600"
@@ -257,49 +289,60 @@ interface AdminDashboardHomeProps {
   onNavigate: (view: AdminView) => void;
 }
 
+type StatColor = "blue" | "yellow" | "green" | "purple";
+
+interface AdminStats {
+  totalStudents: number;
+  pendingQueries: number;
+  activeTracks: number;
+  completedAssessments: number;
+}
+
 function AdminDashboardHome({ onNavigate }: AdminDashboardHomeProps) {
-  const stats = [
-    {
-      label: "Total Students",
-      value: "542",
-      icon: "👥",
-      color: "blue" as const
-    },
-    {
-      label: "Pending Queries",
-      value: "12",
-      icon: "💬",
-      color: "yellow" as const
-    },
-    { label: "Active Tracks", value: "4", icon: "📚", color: "green" as const },
-    {
-      label: "Assessments Completed",
-      value: "387",
-      icon: "✅",
-      color: "purple" as const
-    }
-  ];
+  const [stats, setStats] = useState<AdminStats>({
+    totalStudents: 0,
+    pendingQueries: 0,
+    activeTracks: 0,
+    completedAssessments: 0
+  });
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const recentActivities = [
-    {
-      action: "New student registered",
-      user: "Maria Santos",
-      time: "5 minutes ago"
-    },
-    {
-      action: "Assessment completed",
-      user: "Juan Dela Cruz",
-      time: "15 minutes ago"
-    },
-    { action: "Query submitted", user: "Ana Reyes", time: "1 hour ago" },
-    {
-      action: "Track preference updated",
-      user: "Carlos Mendoza",
-      time: "2 hours ago"
-    }
-  ];
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const token =
+          localStorage.getItem("access") ||
+          localStorage.getItem("token") ||
+          localStorage.getItem("accessToken");
 
-  type StatColor = "blue" | "yellow" | "green" | "purple";
+        const res = await fetch(`${API_BASE_URL}/admin/stats`, {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          }
+        });
+
+        if (!res.ok) {
+          throw new Error("Failed to fetch admin stats");
+        }
+
+        const data = await res.json();
+        setStats({
+          totalStudents: data.totalStudents ?? 0,
+          pendingQueries: data.pendingQueries ?? 0,
+          activeTracks: data.activeTracks ?? 0,
+          completedAssessments: data.completedAssessments ?? 0
+        });
+      } catch (err) {
+        // optional: you can add toast/error UI here
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, []);
 
   const getStatColor = (color: StatColor) => {
     const colors: Record<StatColor, string> = {
@@ -310,6 +353,33 @@ function AdminDashboardHome({ onNavigate }: AdminDashboardHomeProps) {
     };
     return colors[color];
   };
+
+  const statCards = [
+    {
+      label: "Total Students",
+      value: stats.totalStudents,
+      icon: "👥",
+      color: "blue" as StatColor
+    },
+    {
+      label: "Pending Queries",
+      value: stats.pendingQueries,
+      icon: "💬",
+      color: "yellow" as StatColor
+    },
+    {
+      label: "Active Tracks",
+      value: stats.activeTracks || 4,
+      icon: "📚",
+      color: "green" as StatColor
+    },
+    {
+      label: "Assessments Completed",
+      value: stats.completedAssessments,
+      icon: "✅",
+      color: "purple" as StatColor
+    }
+  ];
 
   return (
     <div className="space-y-6">
@@ -322,7 +392,7 @@ function AdminDashboardHome({ onNavigate }: AdminDashboardHomeProps) {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, index) => (
+        {statCards.map((stat, index) => (
           <div
             key={index}
             className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
@@ -330,7 +400,7 @@ function AdminDashboardHome({ onNavigate }: AdminDashboardHomeProps) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-600 mb-1">{stat.label}</p>
-                <p className="text-gray-900">{stat.value}</p>
+                <p className="text-gray-900">{loading ? "…" : stat.value}</p>
               </div>
               <div
                 className={`w-12 h-12 rounded-lg ${getStatColor(
@@ -429,12 +499,34 @@ function AdminDashboardHome({ onNavigate }: AdminDashboardHomeProps) {
       </div>
 
       {/* Recent Activities */}
+      {/* (Static pa rin to for now – pwede rin natin gawing dynamic later) */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="p-6 border-b border-gray-200">
           <h3 className="text-gray-900">Recent Activities</h3>
         </div>
         <div className="divide-y divide-gray-200">
-          {recentActivities.map((activity, index) => (
+          {[
+            {
+              action: "New student registered",
+              user: "Maria Santos",
+              time: "5 minutes ago"
+            },
+            {
+              action: "Assessment completed",
+              user: "Juan Dela Cruz",
+              time: "15 minutes ago"
+            },
+            {
+              action: "Query submitted",
+              user: "Ana Reyes",
+              time: "1 hour ago"
+            },
+            {
+              action: "Track preference updated",
+              user: "Carlos Mendoza",
+              time: "2 hours ago"
+            }
+          ].map((activity, index) => (
             <div
               key={index}
               className="p-6 flex items-center justify-between hover:bg-gray-50"

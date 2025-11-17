@@ -1,4 +1,3 @@
-// client/src/App.tsx
 import {
   Routes,
   Route,
@@ -18,12 +17,6 @@ import StudentDashboard from "./pages/StudentDashboard";
 
 // Shared / student pages
 import StudentAssessmentResult from "./pages/StudentAssessmentResult";
-
-// Admin-only pages
-import AdminAnnouncements from "./pages/AdminAnnouncements";
-import AdminCareerTracks from "./pages/AdminCareerTracks";
-import AdminQueryManagement from "./pages/AdminQueryManagement";
-import AdminStudentManagement from "./pages/AdminStudentManagement";
 
 // ======================
 // Role-based dashboard
@@ -46,7 +39,9 @@ function RoleBasedDashboard() {
     nav("/login", { replace: true });
   };
 
-  // Map URL → initial view for StudentDashboard
+  const path = location.pathname;
+
+  // ---------- STUDENT VIEW MAP ----------
   let initialStudentView:
     | "dashboard"
     | "profile"
@@ -55,8 +50,6 @@ function RoleBasedDashboard() {
     | "queries"
     | "settings"
     | "announcements" = "dashboard";
-
-  const path = location.pathname;
 
   if (path.startsWith("/student/profile")) {
     initialStudentView = "profile";
@@ -74,11 +67,35 @@ function RoleBasedDashboard() {
     initialStudentView = "dashboard";
   }
 
+  // ---------- ADMIN VIEW MAP ----------
+  let initialAdminView:
+    | "dashboard"
+    | "students"
+    | "tracks"
+    | "queries"
+    | "announcements"
+    | "settings" = "dashboard";
+
+  if (path.startsWith("/admin/students")) {
+    initialAdminView = "students";
+  } else if (path.startsWith("/admin/career-tracks")) {
+    initialAdminView = "tracks";
+  } else if (path.startsWith("/admin/queries")) {
+    initialAdminView = "queries";
+  } else if (path.startsWith("/admin/announcements")) {
+    initialAdminView = "announcements";
+  } else if (path.startsWith("/account-settings")) {
+    initialAdminView = "settings";
+  } else if (path.startsWith("/admin/dashboard") || path === "/dashboard") {
+    initialAdminView = "dashboard";
+  }
+
   if (role === "admin") {
     return (
       <AdminDashboard
         user={{ id, name: fullName, role: "admin", email }}
         onLogout={handleLogout}
+        initialView={initialAdminView}
       />
     );
   }
@@ -194,10 +211,19 @@ export default function App() {
           Admin routes
          ====================== */}
       <Route
+        path="/admin/dashboard"
+        element={
+          <ProtectedRoute>
+            <RoleBasedDashboard />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
         path="/admin/announcements"
         element={
           <ProtectedRoute>
-            <AdminAnnouncements />
+            <RoleBasedDashboard />
           </ProtectedRoute>
         }
       />
@@ -206,7 +232,7 @@ export default function App() {
         path="/admin/career-tracks"
         element={
           <ProtectedRoute>
-            <AdminCareerTracks />
+            <RoleBasedDashboard />
           </ProtectedRoute>
         }
       />
@@ -215,7 +241,7 @@ export default function App() {
         path="/admin/queries"
         element={
           <ProtectedRoute>
-            <AdminQueryManagement />
+            <RoleBasedDashboard />
           </ProtectedRoute>
         }
       />
@@ -224,7 +250,7 @@ export default function App() {
         path="/admin/students"
         element={
           <ProtectedRoute>
-            <AdminStudentManagement />
+            <RoleBasedDashboard />
           </ProtectedRoute>
         }
       />

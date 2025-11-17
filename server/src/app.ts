@@ -9,6 +9,7 @@ import assessmentRoutes from "./routes/assessments.js";
 import trackRoutes from "./routes/tracks.js";
 import queryRoutes from "./routes/queries.js";
 import announcementRoutes from "./routes/announcements.js";
+import adminRoutes from "./routes/admin.js";
 
 const app = express();
 
@@ -25,5 +26,6 @@ app.use("/assessments", assessmentRoutes);
 app.use("/tracks", trackRoutes);
 app.use("/queries", queryRoutes);
 app.use("/announcements", announcementRoutes);
+app.use("/admin", adminRoutes);
 
 export default app;

@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:9007";
 
 interface Student {
   id: string;
@@ -13,62 +15,22 @@ interface Student {
   enrollmentDate: string;
 }
 
-export default function AdminStudentManagement() {
-  const [students, setStudents] = useState<Student[]>([
-    {
-      id: "1",
-      studentId: "STU2024001",
-      name: "John Doe",
-      email: "john.doe@example.com",
-      grade: "10",
-      section: "A",
-      track: "STEM",
-      gpa: 90.5,
-      assessmentCompleted: true,
-      enrollmentDate: "2024-06-01"
-    },
-    {
-      id: "2",
-      studentId: "STU2024002",
-      name: "Maria Santos",
-      email: "maria.santos@example.com",
-      grade: "10",
-      section: "B",
-      track: "ABM",
-      gpa: 88.3,
-      assessmentCompleted: true,
-      enrollmentDate: "2024-06-01"
-    },
-    {
-      id: "3",
-      studentId: "STU2024003",
-      name: "Juan Dela Cruz",
-      email: "juan.delacruz@example.com",
-      grade: "10",
-      section: "A",
-      track: "HUMSS",
-      gpa: 87.8,
-      assessmentCompleted: false,
-      enrollmentDate: "2024-06-01"
-    },
-    {
-      id: "4",
-      studentId: "STU2024004",
-      name: "Ana Reyes",
-      email: "ana.reyes@example.com",
-      grade: "11",
-      section: "C",
-      track: "GAS",
-      gpa: 89.2,
-      assessmentCompleted: true,
-      enrollmentDate: "2024-06-01"
-    }
-  ]);
+interface BackendUser {
+  _id: string;
+  fullName?: string;
+  email?: string;
+  role: "student" | "admin";
+  createdAt?: string;
+}
 
+export default function AdminStudentManagement() {
+  const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterTrack, setFilterTrack] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [newStudent, setNewStudent] = useState({
     studentId: "",
@@ -81,6 +43,63 @@ export default function AdminStudentManagement() {
     enrollmentDate: new Date().toISOString().split("T")[0]
   });
 
+  // ==============================
+  // Fetch students from /students (users collection)
+  // ==============================
+  useEffect(() => {
+    const fetchStudents = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const token =
+          localStorage.getItem("access") ||
+          localStorage.getItem("token") ||
+          localStorage.getItem("accessToken");
+
+        const res = await fetch(`${API_BASE_URL}/students`, {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          }
+        });
+
+        if (!res.ok) {
+          throw new Error("Failed to fetch students");
+        }
+
+        const data: BackendUser[] = await res.json();
+
+        const mapped: Student[] = data.map((u) => ({
+          id: u._id,
+          studentId: `STU${u._id.slice(-6).toUpperCase()}`, // temp ID
+          name: u.fullName ?? "—",
+          email: u.email ?? "—",
+          grade: "—", // wala pa sa users
+          section: "",
+          track: "",
+          gpa: 0,
+          assessmentCompleted: false,
+          enrollmentDate: u.createdAt
+            ? u.createdAt.slice(0, 10)
+            : new Date().toISOString().slice(0, 10)
+        }));
+
+        setStudents(mapped);
+      } catch (err) {
+        console.error(err);
+        setError("Unable to load students. Please try again later.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStudents();
+  }, []);
+
+  // ==============================
+  // Local add / update / delete (UI only)
+  // ==============================
   const handleAddStudent = () => {
     if (newStudent.name && newStudent.email && newStudent.studentId) {
       const student: Student = {
@@ -88,7 +107,7 @@ export default function AdminStudentManagement() {
         ...newStudent,
         assessmentCompleted: false
       };
-      setStudents([...students, student]);
+      setStudents((prev) => [...prev, student]);
       setNewStudent({
         studentId: "",
         name: "",
@@ -100,22 +119,29 @@ export default function AdminStudentManagement() {
         enrollmentDate: new Date().toISOString().split("T")[0]
       });
       setShowAddForm(false);
-      alert("Student added successfully!");
+      alert(
+        "Student added locally. (TODO: hook to POST /students kapag ready na backend)"
+      );
     }
   };
 
   const handleUpdateStudent = (updatedStudent: Student) => {
-    setStudents(
-      students.map((s) => (s.id === updatedStudent.id ? updatedStudent : s))
+    setStudents((prev) =>
+      prev.map((s) => (s.id === updatedStudent.id ? updatedStudent : s))
     );
     setSelectedStudent(null);
-    alert("Student record updated successfully!");
+    alert(
+      "Student updated locally. (TODO: hook to PUT /students/:id kapag ready na)"
+    );
   };
 
   const handleDeleteStudent = (id: string) => {
     if (confirm("Are you sure you want to delete this student record?")) {
-      setStudents(students.filter((s) => s.id !== id));
+      setStudents((prev) => prev.filter((s) => s.id !== id));
       setSelectedStudent(null);
+      alert(
+        "Student deleted locally. (TODO: hook to DELETE /students/:id kapag ready na)"
+      );
     }
   };
 
@@ -124,10 +150,14 @@ export default function AdminStudentManagement() {
       student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.studentId.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesTrack = filterTrack === "all" || student.track === filterTrack;
+    const matchesTrack =
+      filterTrack === "all" || (student.track && student.track === filterTrack);
     return matchesSearch && matchesTrack;
   });
 
+  // =================================
+  // Edit view
+  // =================================
   if (selectedStudent) {
     return (
       <div className="max-w-4xl mx-auto">
@@ -215,6 +245,7 @@ export default function AdminStudentManagement() {
                   <option value="10">Grade 10</option>
                   <option value="11">Grade 11</option>
                   <option value="12">Grade 12</option>
+                  <option value="—">Not set</option>
                 </select>
               </div>
               <div>
@@ -243,6 +274,7 @@ export default function AdminStudentManagement() {
                   }
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
                 >
+                  <option value="">Not set</option>
                   <option value="STEM">STEM</option>
                   <option value="ABM">ABM</option>
                   <option value="HUMSS">HUMSS</option>
@@ -308,6 +340,9 @@ export default function AdminStudentManagement() {
     );
   }
 
+  // =================================
+  // List view
+  // =================================
   return (
     <div className="max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -338,7 +373,13 @@ export default function AdminStudentManagement() {
         </button>
       </div>
 
-      {/* Add Student Form */}
+      {error && (
+        <div className="mb-4 px-4 py-2 rounded-lg bg-red-50 text-red-700">
+          {error}
+        </div>
+      )}
+
+      {/* Add Student Form (UI only) */}
       {showAddForm && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
           <h3 className="text-gray-900 mb-4">Add New Student</h3>
@@ -437,7 +478,7 @@ export default function AdminStudentManagement() {
         </div>
       )}
 
-      {/* Search and Filter */}
+      {/* Search & Filter */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:space-x-4 space-y-4 md:space-y-0">
           <div className="flex-1">
@@ -465,7 +506,7 @@ export default function AdminStudentManagement() {
         </div>
       </div>
 
-      {/* Students Table */}
+      {/* Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -486,43 +527,75 @@ export default function AdminStudentManagement() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredStudents.map((student) => (
-                <tr key={student.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-gray-900">
-                    {student.studentId}
-                  </td>
-                  <td className="px-6 py-4 text-gray-900">{student.name}</td>
-                  <td className="px-6 py-4 text-gray-600">{student.email}</td>
-                  <td className="px-6 py-4 text-gray-900">
-                    {student.grade}-{student.section}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full">
-                      {student.track}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-gray-900">{student.gpa}</td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`px-3 py-1 rounded-full ${
-                        student.assessmentCompleted
-                          ? "bg-green-100 text-green-700"
-                          : "bg-yellow-100 text-yellow-700"
-                      }`}
-                    >
-                      {student.assessmentCompleted ? "Complete" : "Pending"}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <button
-                      onClick={() => setSelectedStudent(student)}
-                      className="text-purple-600 hover:text-purple-700"
-                    >
-                      Edit
-                    </button>
+              {loading ? (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-6 py-4 text-center text-gray-500"
+                  >
+                    Loading students…
                   </td>
                 </tr>
-              ))}
+              ) : filteredStudents.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-6 py-4 text-center text-gray-500"
+                  >
+                    No students found.
+                  </td>
+                </tr>
+              ) : (
+                filteredStudents.map((student) => (
+                  <tr key={student.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 text-gray-900">
+                      {student.studentId}
+                    </td>
+                    <td className="px-6 py-4 text-gray-900">
+                      {student.name || "-"}
+                    </td>
+                    <td className="px-6 py-4 text-gray-600">
+                      {student.email || "-"}
+                    </td>
+                    <td className="px-6 py-4 text-gray-900">
+                      {student.grade && student.section
+                        ? `${student.grade}-${student.section}`
+                        : student.grade || "-"}
+                    </td>
+                    <td className="px-6 py-4">
+                      {student.track ? (
+                        <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full">
+                          {student.track}
+                        </span>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-gray-900">
+                      {student.gpa ? student.gpa.toFixed(1) : "-"}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`px-3 py-1 rounded-full ${
+                          student.assessmentCompleted
+                            ? "bg-green-100 text-green-700"
+                            : "bg-yellow-100 text-yellow-700"
+                        }`}
+                      >
+                        {student.assessmentCompleted ? "Complete" : "Pending"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <button
+                        onClick={() => setSelectedStudent(student)}
+                        className="text-purple-600 hover:text-purple-700"
+                      >
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

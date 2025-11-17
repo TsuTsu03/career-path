@@ -1,4 +1,19 @@
-import { useState } from "react";
+// client/src/pages/StudentQueries.tsx
+
+import { useEffect, useState, type JSX } from "react";
+
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:9007";
+
+function getStoredToken(): string | null {
+  const keys = ["access", "token", "accessToken", "authToken"];
+  for (const key of keys) {
+    const local = localStorage.getItem(key);
+    if (local) return local;
+    const session = sessionStorage.getItem(key);
+    if (session) return session;
+  }
+  return null;
+}
 
 interface StudentQueriesProps {
   userId: string;
@@ -16,51 +31,196 @@ interface Query {
   userId: string;
 }
 
-export default function StudentQueries({ userId }: StudentQueriesProps) {
-  const [queries, setQueries] = useState<Query[]>(() => [
-    {
-      id: "1",
-      subject: "STEM Track Requirements",
-      message:
-        "What are the specific grade requirements for the STEM track? I am currently in Grade 9 with an average of 88.",
-      status: "answered",
-      date: "2024-11-10",
-      response:
-        "Good day! For the STEM track, we recommend an average of 85 and above, especially in Science and Mathematics subjects. With your current average of 88, you are eligible for the STEM track. However, I also suggest assessing your interests and career goals through our assessment tool.",
-      responseDate: "2024-11-11",
-      counselor: "Ms. Rodriguez",
-      userId
-    },
-    {
-      id: "2",
-      subject: "Career Options in ABM",
-      message:
-        "Can you provide more information about career opportunities after taking the ABM strand?",
-      status: "pending",
-      date: "2024-11-12",
-      userId
-    }
-  ]);
+/**
+ * Expected shape ng backend.
+ * I-align mo to sa actual fields ng DB mo later.
+ */
+interface BackendQuery {
+  id: string;
+  subject: string;
+  message: string;
+  status: "pending" | "answered";
+  userId: string;
 
+  createdAt?: string;
+  answeredAt?: string;
+  updatedAt?: string;
+
+  response?: string;
+  counselorName?: string;
+}
+
+/** Map backend → front-end Query */
+function mapBackendQuery(q: BackendQuery): Query {
+  return {
+    id: q.id,
+    subject: q.subject,
+    message: q.message,
+    status: q.status,
+    userId: q.userId,
+    date: q.createdAt ?? new Date().toISOString(),
+    response: q.response,
+    responseDate: q.answeredAt ?? q.updatedAt,
+    counselor: q.counselorName
+  };
+}
+
+export default function StudentQueries({
+  userId
+}: StudentQueriesProps): JSX.Element {
+  const [queries, setQueries] = useState<Query[]>([]);
   const [showNewQuery, setShowNewQuery] = useState(false);
   const [newQuery, setNewQuery] = useState({ subject: "", message: "" });
   const [selectedQuery, setSelectedQuery] = useState<Query | null>(null);
 
-  const handleSubmitQuery = () => {
-    if (newQuery.subject && newQuery.message) {
-      const query: Query = {
-        id: Date.now().toString(),
-        subject: newQuery.subject,
-        message: newQuery.message,
-        status: "pending",
-        date: new Date().toISOString().split("T")[0],
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  /* ========== GET /api/queries?userId=... ========== */
+  useEffect(() => {
+    const fetchQueries = async (): Promise<void> => {
+      setLoading(true);
+      setError(null);
+
+      const token = getStoredToken();
+      if (!token) {
+        setError("No session found. Please log in again to view your queries.");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const headers: HeadersInit = {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        };
+
+        const url = `${API_BASE_URL}/queries?userId=${encodeURIComponent(
+          userId
+        )}`;
+
+        const res = await fetch(url, { method: "GET", headers });
+
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as {
+            message?: string;
+          };
+          throw new Error(
+            body.message ??
+              `Failed to load queries from server (status ${res.status}).`
+          );
+        }
+
+        const body = (await res.json()) as {
+          success: boolean;
+          queries: BackendQuery[];
+        };
+
+        if (!body.success) {
+          throw new Error(
+            "Server returned success = false when loading queries."
+          );
+        }
+
+        const mapped = body.queries.map(mapBackendQuery);
+        setQueries(mapped);
+      } catch (err) {
+        console.error(err);
+        if (err instanceof Error) setError(err.message);
+        else setError("Unexpected error while loading queries.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void fetchQueries();
+  }, [userId]);
+
+  /* ========== POST /api/queries ========== */
+  const handleSubmitQuery = async (): Promise<void> => {
+    if (!newQuery.subject.trim() || !newQuery.message.trim()) return;
+
+    const token = getStoredToken();
+    if (!token) {
+      setError("Your session has expired. Please log in again.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      };
+
+      const payload = {
+        subject: newQuery.subject.trim(),
+        message: newQuery.message.trim(),
         userId
       };
-      setQueries([query, ...queries]);
+
+      const res = await fetch(`${API_BASE_URL}/queries`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
+          message?: string;
+        };
+        throw new Error(
+          body.message ??
+            `Failed to submit query. Server responded with ${res.status}.`
+        );
+      }
+
+      // Depende sa final implementation mo:
+      // Option A: server returns the created query object
+      // Option B: server returns just { success, message }
+      const body = (await res.json().catch(() => ({}))) as
+        | { success: boolean; message: string; query?: BackendQuery }
+        | BackendQuery;
+
+      let created: Query | null = null;
+
+      if ("id" in body) {
+        // direct BackendQuery
+        created = mapBackendQuery(body as BackendQuery);
+      } else if ("query" in body && body.query) {
+        created = mapBackendQuery(body.query as BackendQuery);
+      }
+
+      if (created) {
+        setQueries((prev) => [created!, ...prev]);
+      } else {
+        // optimistic add kung di mo pa na-return yung created query sa backend
+        const optimistic: Query = {
+          id: Date.now().toString(),
+          subject: payload.subject,
+          message: payload.message,
+          status: "pending",
+          date: new Date().toISOString(),
+          userId
+        };
+        setQueries((prev) => [optimistic, ...prev]);
+      }
+
       setNewQuery({ subject: "", message: "" });
       setShowNewQuery(false);
+    } catch (err) {
+      console.error(err);
+      if (err instanceof Error) setError(err.message);
+      else setError("Unexpected error while submitting query.");
+    } finally {
+      setSubmitting(false);
     }
   };
+
+  /* ========== Detail view ========== */
 
   if (selectedQuery) {
     return (
@@ -151,7 +311,9 @@ export default function StudentQueries({ userId }: StudentQueriesProps) {
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-gray-900">{selectedQuery.counselor}</p>
+                      <p className="text-gray-900">
+                        {selectedQuery.counselor ?? "Counselor"}
+                      </p>
                       <p className="text-gray-600">
                         {selectedQuery.responseDate
                           ? new Date(
@@ -192,6 +354,8 @@ export default function StudentQueries({ userId }: StudentQueriesProps) {
     );
   }
 
+  /* ========== List view ========== */
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -221,6 +385,12 @@ export default function StudentQueries({ userId }: StudentQueriesProps) {
           New Query
         </button>
       </div>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       {/* New Query Form */}
       {showNewQuery && (
@@ -254,9 +424,10 @@ export default function StudentQueries({ userId }: StudentQueriesProps) {
             <div className="flex space-x-3">
               <button
                 onClick={handleSubmitQuery}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={submitting}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Submit Query
+                {submitting ? "Submitting..." : "Submit Query"}
               </button>
               <button
                 onClick={() => {
@@ -274,7 +445,11 @@ export default function StudentQueries({ userId }: StudentQueriesProps) {
 
       {/* Queries List */}
       <div className="space-y-4">
-        {queries.length === 0 ? (
+        {loading ? (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+            <p className="text-gray-700">Loading your queries…</p>
+          </div>
+        ) : queries.length === 0 ? (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
             <div className="inline-block bg-gray-100 text-gray-400 rounded-full p-6 mb-4">
               <svg
