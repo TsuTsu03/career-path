@@ -19,11 +19,11 @@ app.use(cors());
 app.use(express.json());
 
 // keep /api prefix — ok siya for local and Vercel
-app.use("/api/auth", authRoutes);
-app.use("/api/students", studentRoutes);
-app.use("/api/assessments", assessmentRoutes);
-app.use("/api/tracks", trackRoutes);
-app.use("/api/queries", queryRoutes);
-app.use("/api/announcements", announcementRoutes);
+app.use("/auth", authRoutes);
+app.use("/students", studentRoutes);
+app.use("/assessments", assessmentRoutes);
+app.use("/tracks", trackRoutes);
+app.use("/queries", queryRoutes);
+app.use("/announcements", announcementRoutes);
 
 export default app;
