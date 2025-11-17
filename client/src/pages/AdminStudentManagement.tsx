@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:9007";
-
 interface Student {
   id: string;
   studentId: string;
@@ -21,6 +20,7 @@ interface BackendUser {
   email?: string;
   role: "student" | "admin";
   createdAt?: string;
+  hasAssessment?: boolean; // <- flag galing backend
 }
 
 export default function AdminStudentManagement() {
@@ -72,14 +72,15 @@ export default function AdminStudentManagement() {
 
         const mapped: Student[] = data.map((u) => ({
           id: u._id,
-          studentId: `STU${u._id.slice(-6).toUpperCase()}`, // temp ID
+          // temp studentId based sa ObjectId para lang may value
+          studentId: `STU${u._id.slice(-6).toUpperCase()}`,
           name: u.fullName ?? "—",
           email: u.email ?? "—",
           grade: "—", // wala pa sa users
           section: "",
           track: "",
           gpa: 0,
-          assessmentCompleted: false,
+          assessmentCompleted: !!u.hasAssessment, // <- dito na ginagamit
           enrollmentDate: u.createdAt
             ? u.createdAt.slice(0, 10)
             : new Date().toISOString().slice(0, 10)

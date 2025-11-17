@@ -6,20 +6,41 @@ import {
   upsertMyProfile
 } from "../controllers/studentProfileController.js";
 import User from "../models/User.js";
+import { AssessmentResultModel } from "../models/AssessmentResults.js";
 
 const router = Router();
 
 /**
  * GET /students
- * Admin-only list of all student users (for AdminStudentManagement)
+ * Admin-only list of all student users + flag kung may assessment na
  */
 router.get("/", requireAuth, requireRole("admin"), async (req, res) => {
   try {
-    const students = await User.find({ role: "student" })
-      .select("_id fullName email role createdAt")
-      .lean();
+    const results = await AssessmentResultModel.find().select("student").lean();
 
-    return res.json(students);
+    const completedSet = new Set(results.map((r) => r.student.toString()));
+
+    // i-cast natin sa custom type para may createdAt
+    const users = (await User.find({ role: "student" })
+      .select("_id fullName email role createdAt")
+      .lean()) as Array<{
+      _id: any;
+      fullName?: string;
+      email?: string;
+      role: "student" | "admin";
+      createdAt?: Date;
+    }>;
+
+    const payload = users.map((u) => ({
+      _id: u._id,
+      fullName: u.fullName,
+      email: u.email,
+      role: u.role,
+      createdAt: u.createdAt ?? null,
+      hasAssessment: completedSet.has(u._id.toString())
+    }));
+
+    return res.json(payload);
   } catch (err) {
     console.error("GET /students error:", err);
     return res
