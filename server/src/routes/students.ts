@@ -1,17 +1,17 @@
-import express from "express";
+// src/routes/students.ts
+import { Router } from "express";
+import { requireAuth, requireRole } from "../middleware/auth.js";
+import {
+  getMyProfile,
+  upsertMyProfile
+} from "../controllers/studentProfileController.js";
 
-const router = express.Router();
+const router = Router();
 
-// GET /api/students
-router.get("/", async (req, res) => {
-  // TODO: palitan with real DB logic
-  return res.json({ success: true, students: [] });
-});
+// GET /api/students/me → kunin profile ng current logged-in student
+router.get("/me", requireAuth, requireRole("student"), getMyProfile);
 
-// POST /api/students
-router.post("/", async (req, res) => {
-  // TODO: create student record
-  return res.status(201).json({ success: true, message: "Student created" });
-});
+// POST /api/students/me → create/update profile
+router.post("/me", requireAuth, requireRole("student"), upsertMyProfile);
 
 export default router;

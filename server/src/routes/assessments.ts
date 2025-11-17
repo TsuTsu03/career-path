@@ -1,24 +1,28 @@
-import express from "express";
+// server/src/routes/assessments.ts
+import { Router } from "express";
+import { requireAuth, requireRole } from "../middleware/auth.js";
+import {
+  createAptitudeAssessment,
+  getLatestAptitudeAssessment
+} from "../controllers/aptitudeAssessmentController.js";
 
-const router = express.Router();
+const router = Router();
 
-// POST /api/assessments
-router.post("/", async (req, res) => {
-  // TODO: save assessment answers + computed results
-  return res.status(201).json({
-    success: true,
-    message: "Assessment saved",
-    results: req.body.results ?? null
-  });
-});
+// POST /api/assessments/aptitude
+router.post(
+  "/aptitude",
+  requireAuth,
+  requireRole("student"),
+  createAptitudeAssessment
+);
 
-// GET /api/assessments/:userId
-router.get("/:userId", async (req, res) => {
-  // TODO: get last assessment of user
-  return res.json({
-    success: true,
-    assessment: null
-  });
-});
+// GET /api/assessments/aptitude/latest
+// Used by TrackRecommendations.tsx to fetch the latest result
+router.get(
+  "/aptitude/latest",
+  requireAuth,
+  requireRole("student"),
+  getLatestAptitudeAssessment
+);
 
 export default router;
