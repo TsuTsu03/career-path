@@ -2,7 +2,7 @@ export default function Dashboard() {
   const fullName = localStorage.getItem("fullName") || "Student";
   return (
     <div style={{ padding: 24 }}>
-      <h1>Welcome to CARPATH 🎓</h1>
+      <h1>Welcome to CAREER PATH 🎓</h1>
       <p>Logged in as {fullName}</p>
 
       <div style={{ marginTop: 16, border: "1px solid #ccc", padding: 16 }}>

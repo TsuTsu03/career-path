@@ -289,7 +289,7 @@ export default function TrackRecommendations(): JSX.Element {
     // Header
     doc.setFont("helvetica", "bold");
     doc.setFontSize(20);
-    doc.text("CARPATH - SHS Track Recommendations", 105, y, {
+    doc.text("CAREER PATH - SHS Track Recommendations", 105, y, {
       align: "center"
     });
 
@@ -428,7 +428,7 @@ export default function TrackRecommendations(): JSX.Element {
       y
     );
 
-    doc.save("CARPATH_SHS_Recommendations.pdf");
+    doc.save("CAREER PATH_SHS_Recommendations.pdf");
   };
 
   /* ---------- Loading / error states ---------- */

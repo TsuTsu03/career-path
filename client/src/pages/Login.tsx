@@ -72,25 +72,22 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4">
+    <div
+      className="min-h-screen bg-cover bg-center flex items-center justify-center p-4"
+      style={{
+        backgroundImage: "url('/assets/LOGIN-PAGE.png')"
+      }}
+    >
       <div className="bg-white rounded-lg shadow-2xl w-full max-w-md p-8">
         <div className="text-center mb-8">
-          <div className="inline-block bg-blue-600 text-white rounded-full p-4 mb-4">
-            <svg
-              className="w-12 h-12"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+          <div className="rounded-lg flex justify-center">
+            <img
+              src="/assets/LOGO.jpg"
+              alt="Logo"
+              className="w-1/4 h-1/4 object-contain"
+            />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">CARPATH</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">CAREER PATH</h1>
           <p className="text-gray-600">Career Path Recommender System</p>
         </div>
 
@@ -156,7 +153,7 @@ export default function Login() {
         </form>
 
         <p className="text-center text-gray-600 mt-6 text-sm">
-          Enter your CARPATH account credentials to continue.
+          Enter your CAREER PATH account credentials to continue.
         </p>
 
         <div className="mt-4 text-center">

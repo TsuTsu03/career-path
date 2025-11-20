@@ -217,7 +217,7 @@ export default function StudentProfile({ user }: StudentProfileProps) {
           <p className="text-gray-600">Manage your personal information</p>
           {isNewProfile && (
             <p className="text-sm text-orange-600 mt-1">
-              Please complete your profile to continue using CARPATH.
+              Please complete your profile to continue using CAREER PATH.
             </p>
           )}
           {error && <p className="text-sm text-red-600 mt-1">{error}</p>}

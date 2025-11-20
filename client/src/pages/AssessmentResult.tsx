@@ -115,8 +115,8 @@ export default function AssessmentResultView({
             <h2 className="text-gray-900 mb-2">Aptitude Assessment Results</h2>
             <p className="text-gray-600">
               Based on your performance across different aptitude domains,
-              CARPATH generated a recommended SHS track using a decision-tree
-              logic.
+              CAREER PATH generated a recommended SHS track using a
+              decision-tree logic.
             </p>
             {result.assessmentId && (
               <p className="text-sm text-gray-500 mt-2">

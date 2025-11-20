@@ -110,23 +110,15 @@ export default function StudentDashboard({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <div className="bg-blue-600 text-white rounded-lg p-2">
-                <svg
-                  className="w-8 h-8"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
+              <div className="rounded-lg">
+                <img
+                  src="/assets/LOGO.jpg"
+                  alt="Logo"
+                  className="w-8 h-8 object-contain"
+                />
               </div>
               <div>
-                <h1 className="text-gray-900">CARPATH</h1>
+                <h1 className="text-gray-900">CAREER PATH</h1>
                 <p className="text-gray-600">Student Portal</p>
               </div>
             </div>
@@ -342,7 +334,7 @@ function DashboardHome({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-gray-900 mb-2">Welcome to CARPATH</h2>
+        <h2 className="text-gray-900 mb-2">Welcome to CAREER PATH</h2>
         <p className="text-gray-600">
           Your personalized career path guidance system
         </p>

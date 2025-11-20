@@ -105,7 +105,7 @@ export default function AdminDashboard({
                 </svg>
               </div>
               <div>
-                <h1 className="text-gray-900">CARPATH</h1>
+                <h1 className="text-gray-900">CAREER PATH</h1>
                 <p className="text-gray-600">Admin Portal</p>
               </div>
             </div>

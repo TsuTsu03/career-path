@@ -17,6 +17,7 @@ import StudentDashboard from "./pages/StudentDashboard";
 
 // Shared / student pages
 import StudentAssessmentResult from "./pages/StudentAssessmentResult";
+import VerifyEmail from "./pages/VerifyEmail";
 
 // ======================
 // Role-based dashboard
@@ -121,6 +122,7 @@ export default function App() {
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
 
       {/* Generic dashboard (decides admin vs student) */}
       <Route
