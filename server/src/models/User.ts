@@ -7,8 +7,8 @@ export interface IUser extends Document {
   password: string;
   role: string;
   isVerified: boolean;
-  verificationToken?: string;
-  verificationTokenExpires?: Date;
+  verificationToken: string | undefined;
+  verificationTokenExpires: Date | undefined;
 }
 
 const userSchema = new Schema<IUser>({

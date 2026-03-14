@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { api, ApiError } from "../lib/api";
 
 type Status = "checking" | "success" | "error";
+
+type VerifyResponse = {
+  success: boolean;
+  message?: string;
+};
 
 export default function VerifyEmail() {
   const location = useLocation();
@@ -23,17 +29,12 @@ export default function VerifyEmail() {
 
     const verifyEmail = async () => {
       try {
-        const res = await fetch("/api/auth/verify-email", {
+        const data = await api<VerifyResponse>("/auth/verify-email", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
           body: JSON.stringify({ token, id })
         });
 
-        const data = await res.json();
-
-        if (!res.ok || !data.success) {
+        if (!data.success) {
           setStatus("error");
           setMessage(data.message || "Verification failed.");
           return;
@@ -42,14 +43,19 @@ export default function VerifyEmail() {
         setStatus("success");
         setMessage("Email verified successfully! Redirecting to login...");
 
-        // redirect to login after 3 seconds
         setTimeout(() => {
           navigate("/login");
         }, 3000);
       } catch (err) {
         console.error(err);
-        setStatus("error");
-        setMessage("Something went wrong while verifying your email.");
+
+        if (err instanceof ApiError) {
+          setStatus("error");
+          setMessage(err.message || "Verification failed.");
+        } else {
+          setStatus("error");
+          setMessage("Something went wrong while verifying your email.");
+        }
       }
     };
 
@@ -65,7 +71,6 @@ export default function VerifyEmail() {
       <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-8 text-center">
         <h1 className="text-2xl font-semibold mb-4">Email Verification</h1>
 
-        {/* Status icon */}
         <div className="flex justify-center mb-4">
           {isChecking && (
             <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -87,8 +92,8 @@ export default function VerifyEmail() {
             isSuccess
               ? "text-green-700"
               : isError
-              ? "text-red-700"
-              : "text-gray-700"
+                ? "text-red-700"
+                : "text-gray-700"
           }`}
         >
           {message}

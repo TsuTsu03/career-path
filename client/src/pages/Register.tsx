@@ -2,9 +2,22 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 
+type RegisterResponse = {
+  success: boolean;
+  message?: string;
+  emailSent?: boolean;
+  user?: {
+    id: string;
+    fullName: string;
+    email: string;
+    role: string;
+    isVerified: boolean;
+  };
+};
+
 const getPasswordStrength = (password: string) => {
   const hasLowerOrUpper = /[A-Za-z]/.test(password);
-  const hasUpper = /[A-Z]/.test(password); // ⭐ NEW REQUIREMENT
+  const hasUpper = /[A-Z]/.test(password);
   const hasNumber = /[0-9]/.test(password);
   const hasSpecial = /[^A-Za-z0-9]/.test(password);
   const isLongEnough = password.length >= 8;
@@ -13,18 +26,17 @@ const getPasswordStrength = (password: string) => {
     return { label: "", color: "bg-gray-200", width: "w-0" };
   }
 
-  // ⭐ STRONG: must contain ALL
   if (isLongEnough && hasLowerOrUpper && hasUpper && hasNumber && hasSpecial) {
     return { label: "Strong", color: "bg-green-500", width: "w-full" };
   }
 
-  // MEDIUM if at least 3 checks + length >= 7
   const checksPassed = [
     hasLowerOrUpper,
     hasUpper,
     hasNumber,
     hasSpecial
   ].filter(Boolean).length;
+
   if (password.length >= 7 && checksPassed >= 2) {
     return { label: "Medium", color: "bg-yellow-500", width: "w-2/3" };
   }
@@ -57,14 +69,23 @@ export default function Register() {
     setLoading(true);
 
     try {
-      const out = await api("/auth/register", {
+      const out = (await api("/auth/register", {
         method: "POST",
         body: JSON.stringify({ fullName, email, password, role })
-      });
+      })) as RegisterResponse;
 
       if (out.success) {
-        setSuccess("Registration successful! You may now log in.");
-        setTimeout(() => nav("/login"), 1500);
+        setSuccess(
+          out.emailSent
+            ? "Registration successful! Please check your email and verify your account before logging in."
+            : "Registration successful, but the verification email could not be sent."
+        );
+
+        setFullName("");
+        setEmail("");
+        setPassword("");
+        setConfirmPassword("");
+        setRole("student");
       } else {
         setErr(out.message || "Failed to register. Try again.");
       }
@@ -173,7 +194,6 @@ export default function Register() {
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
             />
 
-            {/* Password strength bar */}
             <div className="mt-2">
               <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
                 <div
@@ -188,7 +208,6 @@ export default function Register() {
               )}
             </div>
 
-            {/* Requirements */}
             <ul className="mt-2 space-y-1 text-xs">
               <li
                 className={
@@ -229,6 +248,7 @@ export default function Register() {
               </li>
             </ul>
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Confirm Password

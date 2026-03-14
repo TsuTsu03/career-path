@@ -1,4 +1,3 @@
-// server/src/routes/auth.ts
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -8,33 +7,48 @@ import User from "../models/User.js";
 
 const router = express.Router();
 
+function createTransporter() {
+  const port = Number(process.env.EMAIL_PORT || 587);
+
+  return nodemailer.createTransport({
+    host: process.env.EMAIL_HOST || "smtp-relay.brevo.com",
+    port,
+    secure: port === 465,
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS
+    }
+  });
+}
+
 /* =============== EMAIL SENDER HELPER =============== */
 async function sendVerificationEmail(
   email: string,
   token: string,
   userId: string
 ) {
-  const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: Number(process.env.EMAIL_PORT),
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    }
-  });
+  const transporter = createTransporter();
 
   const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
   const verifyUrl = `${clientUrl}/verify-email?token=${token}&id=${userId}`;
 
   await transporter.sendMail({
-    from: `"CARPATH" <${process.env.EMAIL_USER}>`,
+    from: `"${process.env.EMAIL_FROM_NAME || "CARPATH"}" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
     to: email,
     subject: "Verify your email",
     html: `
-      <p>Hi,</p>
-      <p>Thank you for registering. Please click the link below to verify your email:</p>
-      <p><a href="${verifyUrl}">${verifyUrl}</a></p>
-      <p>This link will expire in 24 hours.</p>
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
+        <p>Hi,</p>
+        <p>Thank you for registering. Please click the button below to verify your email:</p>
+        <p>
+          <a href="${verifyUrl}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">
+            Verify Email
+          </a>
+        </p>
+        <p>Or copy and paste this link into your browser:</p>
+        <p><a href="${verifyUrl}">${verifyUrl}</a></p>
+        <p>This link will expire in 24 hours.</p>
+      </div>
     `
   });
 }
@@ -46,20 +60,19 @@ router.post("/register", async (req, res) => {
 
     const existing = await User.findOne({ email });
     if (existing) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Email already registered" });
+      return res.status(400).json({
+        success: false,
+        message: "Email already registered"
+      });
     }
 
-    // Only allow valid roles, fallback to "student"
     const allowedRoles = ["student", "admin"];
     const finalRole = allowedRoles.includes(role) ? role : "student";
 
     const hashed = await bcrypt.hash(password, 10);
 
-    // 🔐 create verification token
     const verificationToken = crypto.randomBytes(32).toString("hex");
-    const verificationTokenExpires = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24h
+    const verificationTokenExpires = new Date(Date.now() + 1000 * 60 * 60 * 24);
 
     const user = new User({
       fullName,
@@ -73,23 +86,25 @@ router.post("/register", async (req, res) => {
 
     await user.save();
 
-    // send verification email
+    let emailSent = true;
+
     try {
       await sendVerificationEmail(
         user.email,
         verificationToken,
-        // ⚠️ gamit na natin yung virtual string id, hindi _id (unknown)
-        user.id
+        String(user._id)
       );
     } catch (emailErr) {
+      emailSent = false;
       console.error("Error sending verification email:", emailErr);
-      // optional: you can still allow registration but warn frontend
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      message:
-        "User registered successfully. Please check your email to verify your account.",
+      message: emailSent
+        ? "User registered successfully. Please check your email to verify your account."
+        : "User registered successfully, but verification email could not be sent.",
+      emailSent,
       user: {
         id: user._id,
         fullName: user.fullName,
@@ -100,7 +115,63 @@ router.post("/register", async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
+  }
+});
+
+/* =============== RESEND VERIFICATION EMAIL =============== */
+router.post("/resend-verification", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required"
+      });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is already verified"
+      });
+    }
+
+    const verificationToken = crypto.randomBytes(32).toString("hex");
+    const verificationTokenExpires = new Date(Date.now() + 1000 * 60 * 60 * 24);
+
+    user.verificationToken = verificationToken;
+    user.verificationTokenExpires = verificationTokenExpires;
+    await user.save();
+
+    await sendVerificationEmail(
+      user.email,
+      verificationToken,
+      String(user._id)
+    );
+
+    return res.json({
+      success: true,
+      message: "Verification email sent successfully"
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to resend verification email"
+    });
   }
 });
 
@@ -110,15 +181,16 @@ router.post("/verify-email", async (req, res) => {
     const { token, id } = req.body;
 
     if (!token || !id) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Missing token or id" });
+      return res.status(400).json({
+        success: false,
+        message: "Missing token or id"
+      });
     }
 
     const user = await User.findOne({
       _id: id,
       verificationToken: token,
-      verificationTokenExpires: { $gt: new Date() } // not expired
+      verificationTokenExpires: { $gt: new Date() }
     });
 
     if (!user) {
@@ -129,22 +201,21 @@ router.post("/verify-email", async (req, res) => {
     }
 
     user.isVerified = true;
-
-    // ❌ dati: user.verificationToken = undefined;
-    // exactOptionalPropertyTypes + ?prop → bawal mag-assign ng undefined
-    // ✅ use delete + cast to any para happy si TS
-    delete (user as any).verificationToken;
-    delete (user as any).verificationTokenExpires;
+    user.verificationToken = undefined;
+    user.verificationTokenExpires = undefined;
 
     await user.save();
 
-    res.json({
+    return res.json({
       success: true,
       message: "Email verified successfully"
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
   }
 });
 
@@ -153,23 +224,22 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // 1️⃣ Check if user exists
     const user = await User.findOne({ email });
     if (!user) {
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password"
+      });
     }
 
-    // 2️⃣ Compare passwords
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Invalid password" });
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password"
+      });
     }
 
-    // 🔐 2.5 Block login if not verified
     if (!user.isVerified) {
       return res.status(401).json({
         success: false,
@@ -177,13 +247,13 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // 3️⃣ Generate JWT token (include role)
     const secret = process.env.JWT_SECRET;
     if (!secret) {
       console.error("JWT_SECRET is not set");
-      return res
-        .status(500)
-        .json({ success: false, message: "Server configuration error" });
+      return res.status(500).json({
+        success: false,
+        message: "Server configuration error"
+      });
     }
 
     const token = jwt.sign(
@@ -192,8 +262,7 @@ router.post("/login", async (req, res) => {
       { expiresIn: "1d" }
     );
 
-    // 4️⃣ Return user data + token
-    res.json({
+    return res.json({
       success: true,
       message: "Login successful",
       token,
@@ -206,7 +275,10 @@ router.post("/login", async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
   }
 });
 

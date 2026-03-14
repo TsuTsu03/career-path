@@ -1,7 +1,7 @@
 // client/src/pages/Login.tsx
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 
 type UserRole = "student" | "admin";
 
@@ -41,16 +41,12 @@ export default function Login() {
       })) as LoginResponse;
 
       if (out.success && out.token && out.user) {
-        // save auth info
         localStorage.setItem(TOKEN_KEY, out.token);
         localStorage.setItem("role", out.user.role ?? role);
         localStorage.setItem("fullName", out.user.fullName);
         localStorage.setItem("email", out.user.email);
-
-        // optional: keep a single JSON copy of the user
         localStorage.setItem("currentUser", JSON.stringify(out.user));
 
-        // redirect based on role
         const effectiveRole: UserRole = out.user.role ?? role;
         const targetPath =
           effectiveRole === "admin" ? "/dashboard" : "/student/dashboard";
@@ -59,9 +55,16 @@ export default function Login() {
       } else {
         setErr(out.message ?? "Invalid credentials. Try again.");
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(error);
-      setErr("Server error. Please try again later.");
+
+      if (error instanceof ApiError) {
+        setErr(error.data?.message || error.message);
+      } else if (error instanceof Error) {
+        setErr(error.message);
+      } else {
+        setErr("Server error. Please try again later.");
+      }
     } finally {
       setLoading(false);
     }
