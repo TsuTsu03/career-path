@@ -1,4 +1,3 @@
-// src/middleware/auth.ts
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
@@ -12,7 +11,6 @@ export interface AuthRequest extends Request {
   };
 }
 
-// NOTE: hindi muna `export` dito, sa baba na natin i-eexport nang sabay-sabay
 function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   const token = header?.startsWith("Bearer ") ? header.slice(7) : null;
@@ -45,5 +43,4 @@ function requireRole(role: UserRole) {
   };
 }
 
-// 👉 dito tayo explicit: ito talaga yung naka-export sa module
 export { requireAuth, requireRole };

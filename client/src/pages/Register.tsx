@@ -48,7 +48,6 @@ export default function Register() {
   const nav = useNavigate();
   const passwordRef = useRef<HTMLInputElement | null>(null);
 
-  const [role, setRole] = useState<"student" | "admin">("student");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -89,7 +88,7 @@ export default function Register() {
           fullName,
           email: email.trim().toLowerCase(),
           password,
-          role
+          role: "student"
         })
       })) as RegisterResponse;
 
@@ -104,7 +103,6 @@ export default function Register() {
         setEmail("");
         setPassword("");
         setConfirmPassword("");
-        setRole("student");
         setShowWeakPasswordError(false);
       } else {
         setErr(out.message || "Failed to register. Try again.");
@@ -136,7 +134,7 @@ export default function Register() {
           <h1 className="text-2xl font-bold text-gray-900 mb-1">CAREER PATH</h1>
           <p className="text-gray-600">Career Path Recommender System</p>
           <p className="text-gray-500 text-sm mt-2">
-            Create your CAREER PATH account
+            Create your student account
           </p>
         </div>
 
@@ -153,24 +151,6 @@ export default function Register() {
         )}
 
         <form onSubmit={onSubmit} className="space-y-6">
-          <div>
-            <label
-              htmlFor="role"
-              className="block text-sm font-medium text-gray-700 mb-2"
-            >
-              Register as
-            </label>
-            <select
-              id="role"
-              value={role}
-              onChange={(e) => setRole(e.target.value as "student" | "admin")}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
-            >
-              <option value="student">Student</option>
-              <option value="admin">Admin / Counselor</option>
-            </select>
-          </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Full Name

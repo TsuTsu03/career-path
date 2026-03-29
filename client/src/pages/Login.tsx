@@ -1,12 +1,9 @@
-// client/src/pages/Login.tsx
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
 
-type UserRole = "student" | "admin";
-
 interface LoginUser {
-  role: UserRole;
+  role: "student" | "admin";
   fullName: string;
   email: string;
 }
@@ -23,7 +20,6 @@ const TOKEN_KEY = "access";
 export default function Login() {
   const nav = useNavigate();
 
-  const [role, setRole] = useState<UserRole>("student");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
@@ -37,21 +33,26 @@ export default function Login() {
     try {
       const out = (await api("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password, role })
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password,
+          role: "student"
+        })
       })) as LoginResponse;
 
       if (out.success && out.token && out.user) {
+        if (out.user.role !== "student") {
+          setErr("This login page is for students only.");
+          return;
+        }
+
         localStorage.setItem(TOKEN_KEY, out.token);
-        localStorage.setItem("role", out.user.role ?? role);
+        localStorage.setItem("role", out.user.role);
         localStorage.setItem("fullName", out.user.fullName);
         localStorage.setItem("email", out.user.email);
         localStorage.setItem("currentUser", JSON.stringify(out.user));
 
-        const effectiveRole: UserRole = out.user.role ?? role;
-        const targetPath =
-          effectiveRole === "admin" ? "/dashboard" : "/student/dashboard";
-
-        nav(targetPath);
+        nav("/student/dashboard");
       } else {
         setErr(out.message ?? "Invalid credentials. Try again.");
       }
@@ -74,6 +75,10 @@ export default function Login() {
     nav("/register");
   };
 
+  const handleGoAdminLogin = () => {
+    nav("/admin/login");
+  };
+
   return (
     <div
       className="min-h-screen bg-cover bg-center flex items-center justify-center p-4"
@@ -92,6 +97,7 @@ export default function Login() {
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">CAREER PATH</h1>
           <p className="text-gray-600">Career Path Recommender System</p>
+          <p className="text-gray-500 text-sm mt-2">Student Login</p>
         </div>
 
         {err && (
@@ -101,21 +107,6 @@ export default function Login() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label htmlFor="role" className="block text-gray-700 mb-2">
-              Login as
-            </label>
-            <select
-              id="role"
-              value={role}
-              onChange={(e) => setRole(e.target.value as UserRole)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-            >
-              <option value="student">Student</option>
-              <option value="admin">Admin / Counselor</option>
-            </select>
-          </div>
-
           <div>
             <label htmlFor="email" className="block text-gray-700 mb-2">
               Email
@@ -156,7 +147,7 @@ export default function Login() {
         </form>
 
         <p className="text-center text-gray-600 mt-6 text-sm">
-          Enter your CAREER PATH account credentials to continue.
+          Enter your CAREER PATH student account credentials to continue.
         </p>
 
         <div className="mt-4 text-center">
@@ -169,6 +160,16 @@ export default function Login() {
             className="text-sm font-medium text-blue-600 hover:text-blue-700"
           >
             Create an account
+          </button>
+        </div>
+
+        <div className="mt-3 text-center">
+          <button
+            type="button"
+            onClick={handleGoAdminLogin}
+            className="text-xs font-medium text-gray-500 hover:text-gray-700 underline"
+          >
+            Admin login
           </button>
         </div>
       </div>

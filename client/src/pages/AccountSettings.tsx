@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { api, ApiError } from "../lib/api";
 
 interface AccountSettingsProps {
   user: {
@@ -8,6 +9,8 @@ interface AccountSettingsProps {
     role: "student" | "admin";
   };
 }
+
+type ActiveTab = "account" | "notifications" | "privacy" | "add-admin";
 
 export default function AccountSettings({ user }: AccountSettingsProps) {
   const [settings, setSettings] = useState({
@@ -21,9 +24,13 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
     theme: "light"
   });
 
-  const [activeTab, setActiveTab] = useState<
-    "account" | "notifications" | "privacy"
-  >("account");
+  const [newAdmin, setNewAdmin] = useState({
+    fullName: "",
+    email: ""
+  });
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>("account");
+  const [addAdminLoading, setAddAdminLoading] = useState(false);
 
   const handleSaveAccount = () => {
     alert("Account settings saved successfully!");
@@ -43,6 +50,48 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
     }
   };
 
+  const handleAddAdmin = async () => {
+    if (!newAdmin.fullName.trim() || !newAdmin.email.trim()) {
+      alert("Please enter the admin's full name and email.");
+      return;
+    }
+
+    try {
+      setAddAdminLoading(true);
+
+      const token = localStorage.getItem("access");
+
+      await api("/auth/admin/create", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          fullName: newAdmin.fullName.trim(),
+          email: newAdmin.email.trim().toLowerCase()
+        })
+      });
+
+      alert("Admin created successfully. Password setup email sent.");
+      setNewAdmin({
+        fullName: "",
+        email: ""
+      });
+    } catch (error: unknown) {
+      console.error(error);
+
+      if (error instanceof ApiError) {
+        alert(error.data?.message || error.message);
+      } else if (error instanceof Error) {
+        alert(error.message);
+      } else {
+        alert("Failed to create admin.");
+      }
+    } finally {
+      setAddAdminLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="mb-6">
@@ -52,10 +101,9 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
         </p>
       </div>
 
-      {/* Tabs */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="border-b border-gray-200">
-          <div className="flex">
+        <div className="border-b border-gray-200 overflow-x-auto">
+          <div className="flex min-w-max">
             <button
               onClick={() => setActiveTab("account")}
               className={`px-6 py-4 border-b-2 transition-colors ${
@@ -66,6 +114,7 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
             >
               Account
             </button>
+
             <button
               onClick={() => setActiveTab("notifications")}
               className={`px-6 py-4 border-b-2 transition-colors ${
@@ -76,6 +125,7 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
             >
               Notifications
             </button>
+
             <button
               onClick={() => setActiveTab("privacy")}
               className={`px-6 py-4 border-b-2 transition-colors ${
@@ -86,11 +136,23 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
             >
               Privacy
             </button>
+
+            {user.role === "admin" && (
+              <button
+                onClick={() => setActiveTab("add-admin")}
+                className={`px-6 py-4 border-b-2 transition-colors ${
+                  activeTab === "add-admin"
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Add New Admin
+              </button>
+            )}
           </div>
         </div>
 
         <div className="p-8">
-          {/* Account Tab */}
           {activeTab === "account" && (
             <div className="space-y-8">
               <div>
@@ -184,7 +246,6 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
             </div>
           )}
 
-          {/* Notifications Tab */}
           {activeTab === "notifications" && (
             <div>
               <h3 className="text-gray-900 mb-4 pb-2 border-b border-gray-200">
@@ -285,7 +346,6 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
             </div>
           )}
 
-          {/* Privacy Tab */}
           {activeTab === "privacy" && (
             <div>
               <h3 className="text-gray-900 mb-4 pb-2 border-b border-gray-200">
@@ -347,6 +407,71 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
                   </p>
                   <button className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
                     Delete Account
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "add-admin" && user.role === "admin" && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-gray-900 mb-4 pb-2 border-b border-gray-200">
+                  Add New Admin
+                </h3>
+                <p className="text-gray-600 mb-6">
+                  Create a new administrator or counselor account. Only existing
+                  admins can access this section.
+                </p>
+
+                <div className="space-y-4 max-w-xl">
+                  <div>
+                    <label className="block text-gray-700 mb-2">
+                      Full Name
+                    </label>
+                    <input
+                      type="text"
+                      value={newAdmin.fullName}
+                      onChange={(e) =>
+                        setNewAdmin({
+                          ...newAdmin,
+                          fullName: e.target.value
+                        })
+                      }
+                      placeholder="Juan Dela Cruz"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-700 mb-2">
+                      Email Address
+                    </label>
+                    <input
+                      type="email"
+                      value={newAdmin.email}
+                      onChange={(e) =>
+                        setNewAdmin({
+                          ...newAdmin,
+                          email: e.target.value
+                        })
+                      }
+                      placeholder="admin@school.edu"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+                    Make sure this email belongs to an authorized school admin
+                    or counselor before creating access.
+                  </div>
+
+                  <button
+                    onClick={handleAddAdmin}
+                    disabled={addAdminLoading}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    {addAdminLoading ? "Creating..." : "Add Admin"}
                   </button>
                 </div>
               </div>
