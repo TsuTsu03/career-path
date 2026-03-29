@@ -723,12 +723,6 @@ export default function TrackRecommendations(): JSX.Element {
           >
             Consult Counselor
           </button>
-          <button
-            onClick={() => navigate("/student/assessment")}
-            className="px-4 py-3 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            Retake Assessment
-          </button>
         </div>
       </div>
     </div>

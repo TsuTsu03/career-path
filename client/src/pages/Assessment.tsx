@@ -285,12 +285,6 @@ export default function Assessment({
               >
                 View Full Recommendations
               </button>
-              <button
-                onClick={() => setStarted(true)}
-                className="w-full md:w-auto px-5 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Retake Assessment
-              </button>
             </div>
           </div>
         </div>

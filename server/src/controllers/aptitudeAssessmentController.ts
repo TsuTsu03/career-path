@@ -1,4 +1,3 @@
-// server/src/controllers/aptitudeAssessmentController.ts
 import type { Response } from "express";
 import type { AuthRequest } from "../middleware/auth.js";
 import {
@@ -102,83 +101,101 @@ export async function createAptitudeAssessment(
       .json({ success: false, message: "Answers are required" });
   }
 
-  // 1) Compute domain scores (parang NCAE-style test per aptitude domain)
-  const domainScores: DomainScores = createEmptyDomainScores();
-
-  for (const submitted of body.answers) {
-    const question = aptitudeQuestions.find(
-      (q) => q.id === submitted.questionId
-    );
-    if (!question) {
-      // ignore unknown question IDs para hindi mag-crash
-      continue;
-    }
-
-    // Simple rule: +1 point per correct answer sa domain na iyon
-    if (submitted.selectedOptionId === question.correctOptionId) {
-      domainScores[question.domain] += 1;
-    }
-  }
-
-  // 2) Convert domain scores -> track scores using the weighting matrix
-  const trackScores: TrackScores = createEmptyTrackScores();
-
-  (Object.keys(domainScores) as AptitudeDomain[]).forEach((domain) => {
-    const domainScore = domainScores[domain];
-    const weights = domainTrackWeights[domain];
-
-    trackKeys.forEach((track) => {
-      trackScores[track] += domainScore * weights[track];
-    });
-  });
-
-  // 3) Rank tracks by score
-  const sortedTracks = (Object.entries(trackScores) as [TrackKey, number][])
-    .sort(([, a], [, b]) => b - a)
-    .map(([track, score]) => ({ track, score }));
-
-  const primary = sortedTracks[0];
-
-  if (!primary) {
-    return res.status(400).json({
-      success: false,
-      message: "Unable to compute track scores from given answers"
-    });
-  }
-
-  const secondary = sortedTracks[1] ?? primary;
-
-  // 4) Generate explanation / decision path
-  const decisionPath: string[] = [];
-
-  decisionPath.push(
-    `Highest aptitude scores observed in domains: ${getTopDomains(
-      domainScores
-    ).join(", ")}.`
-  );
-  decisionPath.push(
-    `Track scores – STEM: ${trackScores.stem}, ABM: ${trackScores.abm}, HUMSS: ${trackScores.humss}, GAS: ${trackScores.gas}.`
-  );
-
-  if (primary.track === "stem") {
-    decisionPath.push(
-      "STEM is recommended because you showed strong performance in numerical, scientific, and abstract reasoning domains."
-    );
-  } else if (primary.track === "abm") {
-    decisionPath.push(
-      "ABM is recommended because you performed well in numerical, clerical, and entrepreneurial domains related to business and management."
-    );
-  } else if (primary.track === "humss") {
-    decisionPath.push(
-      "HUMSS is recommended because of your strengths in verbal, social, and communication-related domains."
-    );
-  } else {
-    decisionPath.push(
-      "GAS is recommended as a flexible track because your aptitude profile is balanced across multiple domains."
-    );
-  }
-
   try {
+    // NEW: Block retake if assessment already exists for this student
+    const existingAssessment = await AssessmentResultModel.findOne({
+      student: req.user.id
+    })
+      .lean()
+      .exec();
+
+    if (existingAssessment) {
+      return res.status(409).json({
+        success: false,
+        message: "You have already taken the assessment.",
+        assessmentId:
+          existingAssessment._id?.toString?.() ?? String(existingAssessment._id)
+      });
+    }
+
+    // 1) Compute domain scores (parang NCAE-style test per aptitude domain)
+    const domainScores: DomainScores = createEmptyDomainScores();
+
+    for (const submitted of body.answers) {
+      const question = aptitudeQuestions.find(
+        (q) => q.id === submitted.questionId
+      );
+
+      if (!question) {
+        // ignore unknown question IDs para hindi mag-crash
+        continue;
+      }
+
+      // Simple rule: +1 point per correct answer sa domain na iyon
+      if (submitted.selectedOptionId === question.correctOptionId) {
+        domainScores[question.domain] += 1;
+      }
+    }
+
+    // 2) Convert domain scores -> track scores using the weighting matrix
+    const trackScores: TrackScores = createEmptyTrackScores();
+
+    (Object.keys(domainScores) as AptitudeDomain[]).forEach((domain) => {
+      const domainScore = domainScores[domain];
+      const weights = domainTrackWeights[domain];
+
+      trackKeys.forEach((track) => {
+        trackScores[track] += domainScore * weights[track];
+      });
+    });
+
+    // 3) Rank tracks by score
+    const sortedTracks = (Object.entries(trackScores) as [TrackKey, number][])
+      .sort(([, a], [, b]) => b - a)
+      .map(([track, score]) => ({ track, score }));
+
+    const primary = sortedTracks[0];
+
+    if (!primary) {
+      return res.status(400).json({
+        success: false,
+        message: "Unable to compute track scores from given answers"
+      });
+    }
+
+    const secondary = sortedTracks[1] ?? primary;
+
+    // 4) Generate explanation / decision path
+    const decisionPath: string[] = [];
+
+    decisionPath.push(
+      `Highest aptitude scores observed in domains: ${getTopDomains(
+        domainScores
+      ).join(", ")}.`
+    );
+
+    decisionPath.push(
+      `Track scores – STEM: ${trackScores.stem}, ABM: ${trackScores.abm}, HUMSS: ${trackScores.humss}, GAS: ${trackScores.gas}.`
+    );
+
+    if (primary.track === "stem") {
+      decisionPath.push(
+        "STEM is recommended because you showed strong performance in numerical, scientific, and abstract reasoning domains."
+      );
+    } else if (primary.track === "abm") {
+      decisionPath.push(
+        "ABM is recommended because you performed well in numerical, clerical, and entrepreneurial domains related to business and management."
+      );
+    } else if (primary.track === "humss") {
+      decisionPath.push(
+        "HUMSS is recommended because of your strengths in verbal, social, and communication-related domains."
+      );
+    } else {
+      decisionPath.push(
+        "GAS is recommended as a flexible track because your aptitude profile is balanced across multiple domains."
+      );
+    }
+
     // 5) Save result to DB
     const created = await AssessmentResultModel.create({
       student: req.user.id,
@@ -260,7 +277,6 @@ export async function getLatestAptitudeAssessment(
       primaryTrack: primary,
       secondaryTrack: secondary,
       allScores: trackScores,
-      // optional extra data – safe lang kahit di ginagamit ng frontend
       domainScores: latest.domainScores,
       decisionPath: latest.decisionPath ?? [],
       assessmentId: latest._id?.toString?.() ?? String(latest._id)

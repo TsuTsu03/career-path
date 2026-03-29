@@ -6,6 +6,7 @@ export interface IUser extends Document {
   email: string;
   password: string;
   role: string;
+  studentId?: string;
   isVerified: boolean;
   verificationToken: string | undefined;
   verificationTokenExpires: Date | undefined;
@@ -16,7 +17,12 @@ const userSchema = new Schema<IUser>({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   role: { type: String, default: "student" },
-
+  studentId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true
+  },
   // 🔐 Email verification fields
   isVerified: { type: Boolean, default: false },
   verificationToken: { type: String },

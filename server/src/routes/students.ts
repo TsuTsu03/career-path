@@ -12,33 +12,60 @@ const router = Router();
 
 /**
  * GET /students
- * Admin-only list of all student users + flag kung may assessment na
+ * Admin-only list of all student users + assessment details if available
  */
 router.get("/", requireAuth, requireRole("admin"), async (req, res) => {
   try {
-    const results = await AssessmentResultModel.find().select("student").lean();
-
-    const completedSet = new Set(results.map((r) => r.student.toString()));
-
-    // i-cast natin sa custom type para may createdAt
     const users = (await User.find({ role: "student" })
-      .select("_id fullName email role createdAt")
+      .select("_id fullName email role createdAt studentId")
+      .sort({ createdAt: -1 })
       .lean()) as Array<{
       _id: any;
       fullName?: string;
       email?: string;
       role: "student" | "admin";
-      createdAt?: Date;
+      createdAt?: Date | null;
+      studentId?: string;
     }>;
 
-    const payload = users.map((u) => ({
-      _id: u._id,
-      fullName: u.fullName,
-      email: u.email,
-      role: u.role,
-      createdAt: u.createdAt ?? null,
-      hasAssessment: completedSet.has(u._id.toString())
-    }));
+    const results = await AssessmentResultModel.find()
+      .select("student trackScores primaryTrack secondaryTrack createdAt")
+      .lean();
+
+    const assessmentMap = new Map(
+      results.map((r: any) => [r.student.toString(), r])
+    );
+
+    const payload = users.map((u) => {
+      const assessment = assessmentMap.get(u._id.toString());
+
+      return {
+        _id: u._id,
+        studentId: u.studentId ?? null,
+        fullName: u.fullName ?? null,
+        email: u.email ?? null,
+        role: u.role,
+        createdAt: u.createdAt ?? null,
+        hasAssessment: !!assessment,
+        assessmentResult: assessment
+          ? {
+              createdAt: assessment.createdAt ?? null,
+              trackScores: assessment.trackScores ?? {},
+              primaryTrack: assessment.primaryTrack ?? null,
+              secondaryTrack: assessment.secondaryTrack ?? null,
+
+              // ✅ FIXED SCORE MAPPING
+              primaryTrackScore: assessment.primaryTrack
+                ? (assessment.trackScores?.[assessment.primaryTrack] ?? null)
+                : null,
+
+              secondaryTrackScore: assessment.secondaryTrack
+                ? (assessment.trackScores?.[assessment.secondaryTrack] ?? null)
+                : null
+            }
+          : null
+      };
+    });
 
     return res.json(payload);
   } catch (err) {

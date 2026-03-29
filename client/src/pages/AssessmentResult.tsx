@@ -44,7 +44,6 @@ export interface AssessmentResult {
 
 interface AssessmentResultProps {
   result: AssessmentResult;
-  onRetake?: () => void;
 }
 
 const trackLabels: Record<TrackKey, string> = {
@@ -92,8 +91,7 @@ function getMaxTrackScore(trackScores: TrackScores): number {
 }
 
 export default function AssessmentResultView({
-  result,
-  onRetake
+  result
 }: AssessmentResultProps): JSX.Element {
   const {
     primaryTrack,
@@ -125,14 +123,6 @@ export default function AssessmentResultView({
               </p>
             )}
           </div>
-          {onRetake && (
-            <button
-              onClick={onRetake}
-              className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors text-sm"
-            >
-              Retake Assessment
-            </button>
-          )}
         </div>
 
         <div className="mt-6 grid gap-6 md:grid-cols-2">
@@ -249,8 +239,8 @@ export default function AssessmentResultView({
                       isPrimary
                         ? "bg-blue-600"
                         : isSecondary
-                        ? "bg-purple-600"
-                        : "bg-gray-500"
+                          ? "bg-purple-600"
+                          : "bg-gray-500"
                     }`}
                     style={{ width: `${percentage}%` }}
                   />

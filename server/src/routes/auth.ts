@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 import User from "../models/User.js";
+import { generateStudentId } from "../utils/generateStudentId.js";
 
 const router = express.Router();
 
@@ -56,9 +57,35 @@ async function sendVerificationEmail(
 /* =============== REGISTER =============== */
 router.post("/register", async (req, res) => {
   try {
-    const { fullName, email, password, role } = req.body;
+    const { fullName, email, password, role, schoolCode, batch } = req.body;
 
-    const existing = await User.findOne({ email });
+    const normalizedFullName = String(fullName ?? "").trim();
+    const normalizedEmail = String(email ?? "")
+      .trim()
+      .toLowerCase();
+    const rawPassword = String(password ?? "");
+
+    if (!normalizedFullName || !normalizedEmail || !rawPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Full name, email, and password are required."
+      });
+    }
+
+    const hasLetter = /[A-Za-z]/.test(rawPassword);
+    const hasUpper = /[A-Z]/.test(rawPassword);
+    const hasNumber = /[0-9]/.test(rawPassword);
+    const hasSpecial = /[^A-Za-z0-9]/.test(rawPassword);
+    const isLongEnough = rawPassword.length >= 8;
+
+    if (!(isLongEnough && hasLetter && hasUpper && hasNumber && hasSpecial)) {
+      return res.status(400).json({
+        success: false,
+        message: "Password is too weak."
+      });
+    }
+
+    const existing = await User.findOne({ email: normalizedEmail });
     if (existing) {
       return res.status(400).json({
         success: false,
@@ -69,16 +96,22 @@ router.post("/register", async (req, res) => {
     const allowedRoles = ["student", "admin"];
     const finalRole = allowedRoles.includes(role) ? role : "student";
 
-    const hashed = await bcrypt.hash(password, 10);
+    const hashed = await bcrypt.hash(rawPassword, 10);
 
     const verificationToken = crypto.randomBytes(32).toString("hex");
     const verificationTokenExpires = new Date(Date.now() + 1000 * 60 * 60 * 24);
 
+    const studentId =
+      finalRole === "student"
+        ? await generateStudentId({ schoolCode, batch })
+        : undefined;
+
     const user = new User({
-      fullName,
-      email,
+      fullName: normalizedFullName,
+      email: normalizedEmail,
       password: hashed,
       role: finalRole,
+      studentId,
       isVerified: false,
       verificationToken,
       verificationTokenExpires
@@ -107,14 +140,32 @@ router.post("/register", async (req, res) => {
       emailSent,
       user: {
         id: user._id,
+        studentId: user.studentId ?? null,
         fullName: user.fullName,
         email: user.email,
         role: user.role,
         isVerified: user.isVerified
       }
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error(err);
+
+    if (err?.code === 11000) {
+      if (err?.keyPattern?.email) {
+        return res.status(400).json({
+          success: false,
+          message: "Email already registered"
+        });
+      }
+
+      if (err?.keyPattern?.studentId) {
+        return res.status(400).json({
+          success: false,
+          message: "Generated student ID already exists. Please try again."
+        });
+      }
+    }
+
     return res.status(500).json({
       success: false,
       message: "Server error"

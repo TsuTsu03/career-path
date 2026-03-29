@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 
@@ -46,6 +46,7 @@ const getPasswordStrength = (password: string) => {
 
 export default function Register() {
   const nav = useNavigate();
+  const passwordRef = useRef<HTMLInputElement | null>(null);
 
   const [role, setRole] = useState<"student" | "admin">("student");
   const [fullName, setFullName] = useState("");
@@ -55,14 +56,27 @@ export default function Register() {
   const [err, setErr] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showWeakPasswordError, setShowWeakPasswordError] = useState(false);
+
+  const strength = getPasswordStrength(password);
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErr("");
     setSuccess("");
+    setShowWeakPasswordError(false);
 
     if (password !== confirmPassword) {
       setErr("Passwords do not match.");
+      return;
+    }
+
+    const passwordStrength = getPasswordStrength(password);
+
+    if (passwordStrength.label === "Weak") {
+      setErr("Password is too weak.");
+      setShowWeakPasswordError(true);
+      passwordRef.current?.focus();
       return;
     }
 
@@ -71,7 +85,12 @@ export default function Register() {
     try {
       const out = (await api("/auth/register", {
         method: "POST",
-        body: JSON.stringify({ fullName, email, password, role })
+        body: JSON.stringify({
+          fullName,
+          email: email.trim().toLowerCase(),
+          password,
+          role
+        })
       })) as RegisterResponse;
 
       if (out.success) {
@@ -86,6 +105,7 @@ export default function Register() {
         setPassword("");
         setConfirmPassword("");
         setRole("student");
+        setShowWeakPasswordError(false);
       } else {
         setErr(out.message || "Failed to register. Try again.");
       }
@@ -96,8 +116,6 @@ export default function Register() {
       setLoading(false);
     }
   };
-
-  const strength = getPasswordStrength(password);
 
   return (
     <div
@@ -186,12 +204,25 @@ export default function Register() {
               Password
             </label>
             <input
+              ref={passwordRef}
               type="password"
               placeholder="••••••••"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (showWeakPasswordError) {
+                  setShowWeakPasswordError(false);
+                  if (err === "Password is too weak.") {
+                    setErr("");
+                  }
+                }
+              }}
               required
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+              className={`w-full px-4 py-3 border rounded-lg outline-none text-sm focus:ring-2 focus:border-transparent ${
+                showWeakPasswordError
+                  ? "border-red-500 focus:ring-red-500"
+                  : "border-gray-300 focus:ring-blue-500"
+              }`}
             />
 
             <div className="mt-2">
@@ -247,6 +278,12 @@ export default function Register() {
                 • At least 1 special character (e.g. !@#$%)
               </li>
             </ul>
+
+            {showWeakPasswordError && (
+              <p className="mt-2 text-sm text-red-600 font-medium">
+                Password is too weak.
+              </p>
+            )}
           </div>
 
           <div>
