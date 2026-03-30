@@ -77,12 +77,12 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4 py-8">
+    <div className="min-h-screen flex items-center justify-center px-4 py-8">
       <div
         style={{
           backgroundImage: "url('/assets/LOGIN-PAGE.png')"
         }}
-        className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 opacity-15"
+        className="absolute inset-0"
       />
 
       <div className="relative w-full max-w-md rounded-2xl border border-slate-700/60 bg-white/95 p-8 shadow-2xl backdrop-blur">

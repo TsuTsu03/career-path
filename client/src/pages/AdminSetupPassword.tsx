@@ -61,7 +61,12 @@ export default function AdminSetupPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4 py-8">
+    <div
+      style={{
+        backgroundImage: "url('/assets/LOGIN-PAGE.png')"
+      }}
+      className="min-h-screen flex items-center justify-center px-4 py-8"
+    >
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl">
         <h1 className="mb-2 text-2xl font-bold text-slate-900">
           Set Admin Password
