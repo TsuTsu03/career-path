@@ -92,13 +92,12 @@ export default function StudentProfile({ user }: StudentProfileProps) {
     }));
   };
 
-  // Fetch profile on mount
   useEffect(() => {
     const fetchProfile = async (): Promise<void> => {
       setLoading(true);
       setError(null);
 
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("access");
       if (!token) {
         setError("Not authenticated");
         setLoading(false);
@@ -113,7 +112,6 @@ export default function StudentProfile({ user }: StudentProfileProps) {
         });
 
         if (res.status === 404) {
-          // Walang profile pa → force edit with mostly blank fields
           setProfile((prev) => ({
             ...prev,
             email: user.email
@@ -140,7 +138,6 @@ export default function StudentProfile({ user }: StudentProfileProps) {
         } else {
           setError("Failed to load profile");
         }
-        // optional: allow edit anyway for fallback
         setIsEditing(true);
       } finally {
         setLoading(false);
@@ -161,7 +158,7 @@ export default function StudentProfile({ user }: StudentProfileProps) {
     setSaving(true);
     setError(null);
 
-    const token = localStorage.getItem("token");
+    const token = localStorage.getItem("access");
     if (!token) {
       setError("Not authenticated");
       setSaving(false);
@@ -178,21 +175,38 @@ export default function StudentProfile({ user }: StudentProfileProps) {
         body: JSON.stringify(profile)
       });
 
+      const contentType = res.headers.get("content-type") ?? "";
+      const isJson = contentType.includes("application/json");
+
+      const body = isJson ? await res.json() : await res.text();
+
       if (!res.ok) {
-        const body = (await res.json()) as ApiProfileResponse;
+        if (
+          isJson &&
+          typeof body === "object" &&
+          body !== null &&
+          "message" in body
+        ) {
+          throw new Error(
+            String(
+              (body as ApiProfileResponse).message ??
+                `Failed to save profile (${res.status})`
+            )
+          );
+        }
+
         throw new Error(
-          body.message ?? `Failed to save profile (${res.status})`
+          typeof body === "string"
+            ? body
+            : `Failed to save profile (${res.status})`
         );
       }
-
-      const body = (await res.json()) as ApiProfileResponse;
-      mergeProfileFromApi(body);
 
       setIsNewProfile(false);
       setIsEditing(false);
       alert("Profile updated successfully!");
     } catch (err: unknown) {
-      console.error(err);
+      console.error("Save profile error:", err);
       if (err instanceof Error) {
         setError(err.message);
       } else {
@@ -229,8 +243,8 @@ export default function StudentProfile({ user }: StudentProfileProps) {
             isEditing
               ? "bg-green-600 hover:bg-green-700 text-white"
               : canToggleEdit
-              ? "bg-blue-600 hover:bg-blue-700 text-white"
-              : "bg-gray-400 text-white cursor-not-allowed"
+                ? "bg-blue-600 hover:bg-blue-700 text-white"
+                : "bg-gray-400 text-white cursor-not-allowed"
           }`}
         >
           {isEditing
@@ -238,13 +252,12 @@ export default function StudentProfile({ user }: StudentProfileProps) {
               ? "Saving..."
               : "Save Changes"
             : isNewProfile
-            ? "Fill Profile"
-            : "Edit Profile"}
+              ? "Fill Profile"
+              : "Edit Profile"}
         </button>
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        {/* Profile Header */}
         <div className="bg-gradient-to-r from-blue-600 to-purple-700 p-8 rounded-t-lg">
           <div className="flex items-center space-x-6">
             <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center">
@@ -278,9 +291,7 @@ export default function StudentProfile({ user }: StudentProfileProps) {
           </div>
         </div>
 
-        {/* Profile Details */}
         <div className="p-8 space-y-8">
-          {/* Personal Information */}
           <div>
             <h3 className="text-gray-900 mb-4 pb-2 border-b border-gray-200">
               Personal Information
@@ -333,7 +344,6 @@ export default function StudentProfile({ user }: StudentProfileProps) {
             </div>
           </div>
 
-          {/* Contact Information */}
           <div>
             <h3 className="text-gray-900 mb-4 pb-2 border-b border-gray-200">
               Contact Information
@@ -377,7 +387,6 @@ export default function StudentProfile({ user }: StudentProfileProps) {
             </div>
           </div>
 
-          {/* Guardian Information */}
           <div>
             <h3 className="text-gray-900 mb-4 pb-2 border-b border-gray-200">
               Guardian Information
@@ -412,7 +421,6 @@ export default function StudentProfile({ user }: StudentProfileProps) {
             </div>
           </div>
 
-          {/* Academic Interests */}
           <div>
             <h3 className="text-gray-900 mb-4 pb-2 border-b border-gray-200">
               Academic Profile
