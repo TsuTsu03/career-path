@@ -81,7 +81,15 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
       console.error(error);
 
       if (error instanceof ApiError) {
-        alert(error.data?.message || error.message);
+        const apiMessage =
+          typeof error.data === "object" &&
+          error.data !== null &&
+          "message" in error.data &&
+          typeof (error.data as { message?: unknown }).message === "string"
+            ? (error.data as { message: string }).message
+            : undefined;
+
+        alert(apiMessage ?? error.message);
       } else if (error instanceof Error) {
         alert(error.message);
       } else {

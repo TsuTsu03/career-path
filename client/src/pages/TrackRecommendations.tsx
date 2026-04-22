@@ -1,6 +1,5 @@
 // client/src/pages/TrackRecommendations.tsx
 import { useEffect, useState, type JSX } from "react";
-import { useNavigate } from "react-router-dom";
 import jsPDF from "jspdf";
 
 const API_BASE_URL =
@@ -190,8 +189,6 @@ function getStoredToken(): string | null {
 /* ---------------- Component ---------------- */
 
 export default function TrackRecommendations(): JSX.Element {
-  const navigate = useNavigate();
-
   const [assessmentResults, setAssessmentResults] =
     useState<AssessmentResults | null>(null);
   const [loading, setLoading] = useState(true);

@@ -61,7 +61,15 @@ export default function AdminLogin() {
       console.error(error);
 
       if (error instanceof ApiError) {
-        setErr(error.data?.message || error.message);
+        const apiMessage =
+          typeof error.data === "object" &&
+          error.data !== null &&
+          "message" in error.data &&
+          typeof (error.data as { message?: unknown }).message === "string"
+            ? (error.data as { message: string }).message
+            : undefined;
+
+        setErr(apiMessage ?? error.message);
       } else if (error instanceof Error) {
         setErr(error.message);
       } else {
