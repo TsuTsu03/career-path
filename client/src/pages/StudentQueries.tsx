@@ -2,7 +2,9 @@
 
 import { useEffect, useState, type JSX } from "react";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:9007";
+const API_BASE_URL =
+  (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env
+    ?.VITE_API_URL ?? "http://localhost:9007";
 
 function getStoredToken(): string | null {
   const keys = ["access", "token", "accessToken", "authToken"];

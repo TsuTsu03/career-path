@@ -6,7 +6,9 @@ import AdminQueryManagement from "./AdminQueryManagement";
 import AdminAnnouncements from "./AdminAnnouncements";
 import AccountSettings from "./AccountSettings";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:9007";
+const API_BASE_URL =
+  (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env
+    ?.VITE_API_URL ?? "http://localhost:9007";
 interface AdminDashboardProps {
   user: {
     id: string;

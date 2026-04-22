@@ -1,13 +1,8 @@
-type ApiErrorPayload = {
-  success?: boolean;
-  message?: string;
-};
-
 export class ApiError extends Error {
   status: number;
-  data?: ApiErrorPayload;
+  data?: unknown;
 
-  constructor(status: number, message: string, data?: ApiErrorPayload) {
+  constructor(status: number, message: string, data?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
@@ -15,38 +10,46 @@ export class ApiError extends Error {
   }
 }
 
-export const API = import.meta.env.VITE_API_URL || "http://localhost:9007";
+const viteEnv = (
+  import.meta as ImportMeta & {
+    env?: {
+      VITE_API_URL?: string;
+    };
+  }
+).env;
+
+export const API = viteEnv?.VITE_API_URL ?? "http://localhost:9007";
 
 export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem("access");
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(opts.headers as Record<string, string> | undefined),
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
-  };
+  const headers = new Headers(opts.headers ?? {});
+  headers.set("Content-Type", "application/json");
 
-  const res = await fetch(`${API}${path}`, { ...opts, headers });
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
 
-  const contentType = res.headers.get("content-type") || "";
+  const res = await fetch(`${API}${path}`, {
+    ...opts,
+    headers
+  });
+
+  const contentType = res.headers.get("content-type") ?? "";
   const isJson = contentType.includes("application/json");
 
   const data: unknown = isJson ? await res.json() : await res.text();
 
   if (!res.ok) {
-    if (typeof data === "object" && data !== null) {
-      const payload = data as ApiErrorPayload;
-      throw new ApiError(
-        res.status,
-        payload.message || "Request failed",
-        payload
-      );
-    }
+    const message =
+      typeof data === "object" &&
+      data !== null &&
+      "message" in data &&
+      typeof (data as { message?: unknown }).message === "string"
+        ? (data as { message: string }).message
+        : `Request failed with status ${res.status}`;
 
-    throw new ApiError(
-      res.status,
-      typeof data === "string" ? data : "Request failed"
-    );
+    throw new ApiError(res.status, message, data);
   }
 
   return data as T;

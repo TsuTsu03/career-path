@@ -44,7 +44,9 @@ interface BackendResult {
   assessmentId?: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:9007";
+const API_BASE_URL =
+  (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env
+    ?.VITE_API_URL ?? "http://localhost:9007";
 
 // Helper: use the same key as Login.tsx
 function getStoredToken(): string | null {
