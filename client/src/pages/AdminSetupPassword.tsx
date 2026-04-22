@@ -57,7 +57,7 @@ export default function AdminSetupPassword() {
             ? (error.data as { message: string }).message
             : undefined;
 
-        setError(apiMessage ?? error.message);
+        setErr(apiMessage ?? error.message);
       } else if (error instanceof Error) {
         setErr(error.message);
       } else {
