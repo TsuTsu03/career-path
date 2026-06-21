@@ -2,6 +2,14 @@
 import { Schema, model, type Types } from "mongoose";
 import type { AptitudeDomain, TrackKey } from "../data/aptitudeQuestions.js";
 
+export interface AnswerReviewItem {
+  questionId: number;
+  domain: AptitudeDomain;
+  selectedOptionId: string;
+  correctOptionId: string;
+  isCorrect: boolean;
+}
+
 export interface AssessmentResultDocument {
   student: Types.ObjectId;
   domainScores: Record<AptitudeDomain, number>;
@@ -9,6 +17,7 @@ export interface AssessmentResultDocument {
   primaryTrack: TrackKey;
   secondaryTrack: TrackKey;
   decisionPath: string[];
+  answers: AnswerReviewItem[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,7 +45,16 @@ const assessmentResultSchema = new Schema<AssessmentResultDocument>(
     },
     primaryTrack: { type: String, required: true },
     secondaryTrack: { type: String, required: true },
-    decisionPath: [{ type: String, required: true }]
+    decisionPath: [{ type: String, required: true }],
+    answers: [
+      {
+        questionId: { type: Number, required: true },
+        domain: { type: String, required: true },
+        selectedOptionId: { type: String, default: "" },
+        correctOptionId: { type: String, required: true },
+        isCorrect: { type: Boolean, required: true }
+      }
+    ]
   },
   { timestamps: true }
 );

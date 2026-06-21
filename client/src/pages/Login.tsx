@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
+import PasswordInput from "../components/PasswordInput";
 
 interface LoginUser {
   role: "student" | "admin";
@@ -130,8 +131,7 @@ export default function Login() {
             <label htmlFor="password" className="block text-gray-700 mb-2">
               Password
             </label>
-            <input
-              type="password"
+            <PasswordInput
               id="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

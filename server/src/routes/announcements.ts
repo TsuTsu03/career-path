@@ -1,23 +1,21 @@
-import express from "express";
+// server/src/routes/announcements.ts
+import { Router } from "express";
+import { requireAuth, requireRole } from "../middleware/auth.js";
+import {
+  getAnnouncements,
+  createAnnouncement,
+  updateAnnouncement,
+  deleteAnnouncement
+} from "../controllers/announcementController.js";
 
-const router = express.Router();
+const router = Router();
 
-// GET /api/announcements
-router.get("/", async (_req, res) => {
-  // TODO: fetch announcements for students
-  return res.json({
-    success: true,
-    announcements: []
-  });
-});
+// GET /announcements  — any authenticated user (students + admin)
+router.get("/", requireAuth, getAnnouncements);
 
-// POST /api/announcements  (admin only)
-router.post("/", async (req, res) => {
-  // TODO: create announcement
-  return res.status(201).json({
-    success: true,
-    message: "Announcement created"
-  });
-});
+// Admin-only management
+router.post("/", requireAuth, requireRole("admin"), createAnnouncement);
+router.patch("/:id", requireAuth, requireRole("admin"), updateAnnouncement);
+router.delete("/:id", requireAuth, requireRole("admin"), deleteAnnouncement);
 
 export default router;

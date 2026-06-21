@@ -1,6 +1,17 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { api } from "../lib/api";
 
 type AnnouncementCategory = "event" | "deadline" | "general" | "career";
+
+interface AnnouncementResponse {
+  success: boolean;
+  announcement: Announcement;
+}
+
+interface AnnouncementsListResponse {
+  success: boolean;
+  announcements: Announcement[];
+}
 
 interface Announcement {
   id: string;
@@ -21,33 +32,15 @@ interface NewAnnouncementInput {
 }
 
 export default function AdminAnnouncements() {
-  const [announcements, setAnnouncements] = useState<Announcement[]>([
-    {
-      id: "1",
-      title: "Career Fair 2024: Explore Your Future",
-      content:
-        "Join us for the Annual Career Fair on November 20, 2024, from 9:00 AM to 4:00 PM at the School Gymnasium. Meet representatives from top universities and industries to learn about different career paths and educational opportunities. All SHS students are encouraged to attend!",
-      category: "event",
-      date: "2024-11-13",
-      author: "Guidance Office",
-      important: true
-    },
-    {
-      id: "2",
-      title: "SHS Track Selection Deadline Extended",
-      content:
-        "The deadline for SHS track selection has been extended to November 30, 2024. Students who have not yet completed their career assessment or submitted their track preference forms should do so before the deadline. Visit the Guidance Office for assistance.",
-      category: "deadline",
-      date: "2024-11-12",
-      author: "Academic Affairs",
-      important: true
-    }
-  ]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [showNewForm, setShowNewForm] = useState(false);
   const [selectedAnnouncement, setSelectedAnnouncement] =
     useState<Announcement | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [newAnnouncement, setNewAnnouncement] = useState<NewAnnouncementInput>({
     title: "",
@@ -57,14 +50,32 @@ export default function AdminAnnouncements() {
     important: false
   });
 
-  const handleCreateAnnouncement = () => {
-    if (newAnnouncement.title && newAnnouncement.content) {
-      const announcement: Announcement = {
-        id: Date.now().toString(),
-        ...newAnnouncement,
-        date: new Date().toISOString().split("T")[0]
-      };
-      setAnnouncements((prev) => [announcement, ...prev]);
+  // Load announcements from the backend on mount
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await api<AnnouncementsListResponse>("/announcements");
+        setAnnouncements(res.announcements);
+      } catch (err) {
+        console.error("Failed to load announcements", err);
+        setError("Failed to load announcements.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    void load();
+  }, []);
+
+  const handleCreateAnnouncement = async () => {
+    if (!newAnnouncement.title || !newAnnouncement.content) return;
+
+    setSaving(true);
+    try {
+      const res = await api<AnnouncementResponse>("/announcements", {
+        method: "POST",
+        body: JSON.stringify(newAnnouncement)
+      });
+      setAnnouncements((prev) => [res.announcement, ...prev]);
       setNewAnnouncement({
         title: "",
         content: "",
@@ -74,26 +85,56 @@ export default function AdminAnnouncements() {
       });
       setShowNewForm(false);
       alert("Announcement published successfully!");
+    } catch (err) {
+      console.error("Failed to create announcement", err);
+      alert("Failed to publish announcement. Please try again.");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleUpdateAnnouncement = () => {
-    if (selectedAnnouncement) {
+  const handleUpdateAnnouncement = async () => {
+    if (!selectedAnnouncement) return;
+
+    setSaving(true);
+    try {
+      const res = await api<AnnouncementResponse>(
+        `/announcements/${selectedAnnouncement.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            title: selectedAnnouncement.title,
+            content: selectedAnnouncement.content,
+            category: selectedAnnouncement.category,
+            author: selectedAnnouncement.author,
+            important: selectedAnnouncement.important
+          })
+        }
+      );
       setAnnouncements((prev) =>
-        prev.map((a) =>
-          a.id === selectedAnnouncement.id ? selectedAnnouncement : a
-        )
+        prev.map((a) => (a.id === res.announcement.id ? res.announcement : a))
       );
       setSelectedAnnouncement(null);
       setIsEditing(false);
       alert("Announcement updated successfully!");
+    } catch (err) {
+      console.error("Failed to update announcement", err);
+      alert("Failed to update announcement. Please try again.");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleDeleteAnnouncement = (id: string) => {
-    if (confirm("Are you sure you want to delete this announcement?")) {
+  const handleDeleteAnnouncement = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this announcement?")) return;
+
+    try {
+      await api(`/announcements/${id}`, { method: "DELETE" });
       setAnnouncements((prev) => prev.filter((a) => a.id !== id));
       setSelectedAnnouncement(null);
+    } catch (err) {
+      console.error("Failed to delete announcement", err);
+      alert("Failed to delete announcement. Please try again.");
     }
   };
 
@@ -149,15 +190,16 @@ export default function AdminAnnouncements() {
               )}
               {isEditing && (
                 <button
-                  onClick={handleUpdateAnnouncement}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  onClick={() => void handleUpdateAnnouncement()}
+                  disabled={saving}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
                 >
-                  Save Changes
+                  {saving ? "Saving..." : "Save Changes"}
                 </button>
               )}
               <button
                 onClick={() =>
-                  handleDeleteAnnouncement(selectedAnnouncement.id)
+                  void handleDeleteAnnouncement(selectedAnnouncement.id)
                 }
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
               >
@@ -379,10 +421,11 @@ export default function AdminAnnouncements() {
             </div>
             <div className="flex space-x-3">
               <button
-                onClick={handleCreateAnnouncement}
-                className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                onClick={() => void handleCreateAnnouncement()}
+                disabled={saving}
+                className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
               >
-                Publish Announcement
+                {saving ? "Publishing..." : "Publish Announcement"}
               </button>
               <button
                 onClick={() => setShowNewForm(false)}
@@ -397,7 +440,16 @@ export default function AdminAnnouncements() {
 
       {/* Announcements List */}
       <div className="space-y-4">
-        {announcements.length === 0 ? (
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4">
+            {error}
+          </div>
+        )}
+        {loading ? (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center text-gray-600">
+            Loading announcements…
+          </div>
+        ) : announcements.length === 0 ? (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
             <div className="inline-block bg-gray-100 text-gray-400 rounded-full p-6 mb-4">
               <svg

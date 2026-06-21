@@ -1,0 +1,70 @@
+C4.5 DECISION TREE — TRAINED MODEL EXPORT
+=========================================
+
+Algorithm:           C4.5 (gain-ratio attribute selection, threshold splits)
+Training examples:   320
+Features (inputs):   verbal, numerical, scientific, abstract, clerical, entrepreneurial
+Classes (outputs):   STEM, ABM, HUMSS, GAS
+Tree leaves:         14
+Tree depth:          6
+Holdout accuracy:    92.2% (80% train / 20% test split)
+
+DECISION TREE (indented IF / ELSE form)
+---------------------------------------
+IF scientific <= 9.5 THEN
+    IF clerical <= 3.5 THEN
+        => PREDICT STEM (samples=1, confidence=100%, [STEM=1])
+    ELSE (clerical > 3.5)
+        IF verbal <= 10.5 THEN
+            IF entrepreneurial <= 5.5 THEN
+                => PREDICT STEM (samples=2, confidence=100%, [STEM=2])
+            ELSE (entrepreneurial > 5.5)
+                IF clerical <= 9.5 THEN
+                    IF scientific <= 4.5 THEN
+                        => PREDICT HUMSS (samples=3, confidence=67%, [HUMSS=2, ABM=1])
+                    ELSE (scientific > 4.5)
+                        => PREDICT GAS (samples=56, confidence=93%, [GAS=52, ABM=2, STEM=1, HUMSS=1])
+                ELSE (clerical > 9.5)
+                    IF numerical <= 7.5 THEN
+                        => PREDICT HUMSS (samples=1, confidence=100%, [HUMSS=1])
+                    ELSE (numerical > 7.5)
+                        => PREDICT ABM (samples=82, confidence=93%, [ABM=76, GAS=6])
+        ELSE (verbal > 10.5)
+            IF numerical <= 9.5 THEN
+                IF abstract <= 11 THEN
+                    IF numerical <= 8.5 THEN
+                        => PREDICT HUMSS (samples=79, confidence=95%, [HUMSS=75, GAS=4])
+                    ELSE (numerical > 8.5)
+                        => PREDICT GAS (samples=3, confidence=67%, [GAS=2, HUMSS=1])
+                ELSE (abstract > 11)
+                    => PREDICT GAS (samples=1, confidence=100%, [GAS=1])
+            ELSE (numerical > 9.5)
+                => PREDICT GAS (samples=7, confidence=86%, [GAS=6, ABM=1])
+ELSE (scientific > 9.5)
+    IF entrepreneurial <= 9.5 THEN
+        IF numerical <= 8.5 THEN
+            => PREDICT GAS (samples=2, confidence=100%, [GAS=2])
+        ELSE (numerical > 8.5)
+            IF entrepreneurial <= 8.5 THEN
+                => PREDICT STEM (samples=73, confidence=100%, [STEM=73])
+            ELSE (entrepreneurial > 8.5)
+                => PREDICT STEM (samples=4, confidence=75%, [STEM=3, GAS=1])
+    ELSE (entrepreneurial > 9.5)
+        => PREDICT GAS (samples=6, confidence=100%, [GAS=6])
+
+CLASSIFICATION RULES (root-to-leaf)
+-----------------------------------
+1. IF scientific <= 9.5 AND clerical <= 3.5 THEN STEM (confidence 100%, n=1)
+2. IF scientific <= 9.5 AND clerical > 3.5 AND verbal <= 10.5 AND entrepreneurial <= 5.5 THEN STEM (confidence 100%, n=2)
+3. IF scientific <= 9.5 AND clerical > 3.5 AND verbal <= 10.5 AND entrepreneurial > 5.5 AND clerical <= 9.5 AND scientific <= 4.5 THEN HUMSS (confidence 67%, n=3)
+4. IF scientific <= 9.5 AND clerical > 3.5 AND verbal <= 10.5 AND entrepreneurial > 5.5 AND clerical <= 9.5 AND scientific > 4.5 THEN GAS (confidence 93%, n=56)
+5. IF scientific <= 9.5 AND clerical > 3.5 AND verbal <= 10.5 AND entrepreneurial > 5.5 AND clerical > 9.5 AND numerical <= 7.5 THEN HUMSS (confidence 100%, n=1)
+6. IF scientific <= 9.5 AND clerical > 3.5 AND verbal <= 10.5 AND entrepreneurial > 5.5 AND clerical > 9.5 AND numerical > 7.5 THEN ABM (confidence 93%, n=82)
+7. IF scientific <= 9.5 AND clerical > 3.5 AND verbal > 10.5 AND numerical <= 9.5 AND abstract <= 11 AND numerical <= 8.5 THEN HUMSS (confidence 95%, n=79)
+8. IF scientific <= 9.5 AND clerical > 3.5 AND verbal > 10.5 AND numerical <= 9.5 AND abstract <= 11 AND numerical > 8.5 THEN GAS (confidence 67%, n=3)
+9. IF scientific <= 9.5 AND clerical > 3.5 AND verbal > 10.5 AND numerical <= 9.5 AND abstract > 11 THEN GAS (confidence 100%, n=1)
+10. IF scientific <= 9.5 AND clerical > 3.5 AND verbal > 10.5 AND numerical > 9.5 THEN GAS (confidence 86%, n=7)
+11. IF scientific > 9.5 AND entrepreneurial <= 9.5 AND numerical <= 8.5 THEN GAS (confidence 100%, n=2)
+12. IF scientific > 9.5 AND entrepreneurial <= 9.5 AND numerical > 8.5 AND entrepreneurial <= 8.5 THEN STEM (confidence 100%, n=73)
+13. IF scientific > 9.5 AND entrepreneurial <= 9.5 AND numerical > 8.5 AND entrepreneurial > 8.5 THEN STEM (confidence 75%, n=4)
+14. IF scientific > 9.5 AND entrepreneurial > 9.5 THEN GAS (confidence 100%, n=6)

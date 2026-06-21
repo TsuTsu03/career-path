@@ -3,10 +3,14 @@ import { Router } from "express";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import {
   createAptitudeAssessment,
-  getLatestAptitudeAssessment
+  getLatestAptitudeAssessment,
+  getAssessmentModelInfo
 } from "../controllers/aptitudeAssessmentController.js";
 
 const router = Router();
+
+// GET /api/assessments/model-info  — C4.5 model metadata (any authenticated user)
+router.get("/model-info", requireAuth, getAssessmentModelInfo);
 
 // POST /api/assessments/aptitude
 router.post(

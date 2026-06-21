@@ -1,11 +1,14 @@
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import type { AuthRequest } from "../middleware/auth.js";
 import {
   aptitudeQuestions,
-  type AptitudeDomain,
-  type TrackKey
+  type AptitudeDomain
 } from "../data/aptitudeQuestions.js";
-import { AssessmentResultModel } from "../models/AssessmentResults.js";
+import {
+  AssessmentResultModel,
+  type AnswerReviewItem
+} from "../models/AssessmentResults.js";
+import { classifyStudent, getModelInfo } from "../ml/recommender.js";
 
 // request body type coming from frontend
 interface SubmittedAnswer {
@@ -18,49 +21,6 @@ interface AptitudeRequestBody {
 }
 
 type DomainScores = Record<AptitudeDomain, number>;
-type TrackScores = Record<TrackKey, number>;
-
-const trackKeys: TrackKey[] = ["stem", "abm", "humss", "gas"];
-
-// Weighting matrix: paano nagma-map yung aptitude domains sa SHS tracks
-const domainTrackWeights: Record<AptitudeDomain, TrackScores> = {
-  verbal: {
-    stem: 1,
-    abm: 2,
-    humss: 3,
-    gas: 2
-  },
-  numerical: {
-    stem: 3,
-    abm: 3,
-    humss: 1,
-    gas: 2
-  },
-  scientific: {
-    stem: 3,
-    abm: 2,
-    humss: 1,
-    gas: 2
-  },
-  abstract: {
-    stem: 3,
-    abm: 2,
-    humss: 2,
-    gas: 2
-  },
-  clerical: {
-    stem: 1,
-    abm: 3,
-    humss: 1,
-    gas: 2
-  },
-  entrepreneurial: {
-    stem: 1,
-    abm: 3,
-    humss: 2,
-    gas: 2
-  }
-};
 
 function createEmptyDomainScores(): DomainScores {
   return {
@@ -70,15 +30,6 @@ function createEmptyDomainScores(): DomainScores {
     abstract: 0,
     clerical: 0,
     entrepreneurial: 0
-  };
-}
-
-function createEmptyTrackScores(): TrackScores {
-  return {
-    stem: 0,
-    abm: 0,
-    humss: 0,
-    gas: 0
   };
 }
 
@@ -102,7 +53,7 @@ export async function createAptitudeAssessment(
   }
 
   try {
-    // NEW: Block retake if assessment already exists for this student
+    // Block retake if assessment already exists for this student
     const existingAssessment = await AssessmentResultModel.findOne({
       student: req.user.id
     })
@@ -118,8 +69,10 @@ export async function createAptitudeAssessment(
       });
     }
 
-    // 1) Compute domain scores (parang NCAE-style test per aptitude domain)
+    // 1) Score each answer + compute domain scores (these are the decision-tree
+    //    FEATURES). Also keep a per-item review (correct vs wrong).
     const domainScores: DomainScores = createEmptyDomainScores();
+    const answersReview: AnswerReviewItem[] = [];
 
     for (const submitted of body.answers) {
       const question = aptitudeQuestions.find(
@@ -131,87 +84,47 @@ export async function createAptitudeAssessment(
         continue;
       }
 
-      // Simple rule: +1 point per correct answer sa domain na iyon
-      if (submitted.selectedOptionId === question.correctOptionId) {
+      const isCorrect = submitted.selectedOptionId === question.correctOptionId;
+
+      // +1 point per correct answer sa domain na iyon
+      if (isCorrect) {
         domainScores[question.domain] += 1;
       }
-    }
 
-    // 2) Convert domain scores -> track scores using the weighting matrix
-    const trackScores: TrackScores = createEmptyTrackScores();
-
-    (Object.keys(domainScores) as AptitudeDomain[]).forEach((domain) => {
-      const domainScore = domainScores[domain];
-      const weights = domainTrackWeights[domain];
-
-      trackKeys.forEach((track) => {
-        trackScores[track] += domainScore * weights[track];
-      });
-    });
-
-    // 3) Rank tracks by score
-    const sortedTracks = (Object.entries(trackScores) as [TrackKey, number][])
-      .sort(([, a], [, b]) => b - a)
-      .map(([track, score]) => ({ track, score }));
-
-    const primary = sortedTracks[0];
-
-    if (!primary) {
-      return res.status(400).json({
-        success: false,
-        message: "Unable to compute track scores from given answers"
+      answersReview.push({
+        questionId: question.id,
+        domain: question.domain,
+        selectedOptionId: submitted.selectedOptionId ?? "",
+        correctOptionId: question.correctOptionId,
+        isCorrect
       });
     }
 
-    const secondary = sortedTracks[1] ?? primary;
+    // 2) Classify the student using the trained C4.5 decision tree.
+    //    The tree (not a fixed table) decides the recommended strand.
+    const classification = classifyStudent(domainScores);
+    const primary = classification.primaryTrack;
+    const secondary = classification.secondaryTrack;
 
-    // 4) Generate explanation / decision path
-    const decisionPath: string[] = [];
-
-    decisionPath.push(
-      `Highest aptitude scores observed in domains: ${getTopDomains(
-        domainScores
-      ).join(", ")}.`
-    );
-
-    decisionPath.push(
-      `Track scores – STEM: ${trackScores.stem}, ABM: ${trackScores.abm}, HUMSS: ${trackScores.humss}, GAS: ${trackScores.gas}.`
-    );
-
-    if (primary.track === "stem") {
-      decisionPath.push(
-        "STEM is recommended because you showed strong performance in numerical, scientific, and abstract reasoning domains."
-      );
-    } else if (primary.track === "abm") {
-      decisionPath.push(
-        "ABM is recommended because you performed well in numerical, clerical, and entrepreneurial domains related to business and management."
-      );
-    } else if (primary.track === "humss") {
-      decisionPath.push(
-        "HUMSS is recommended because of your strengths in verbal, social, and communication-related domains."
-      );
-    } else {
-      decisionPath.push(
-        "GAS is recommended as a flexible track because your aptitude profile is balanced across multiple domains."
-      );
-    }
-
-    // 5) Save result to DB
+    // 3) Save result to DB
     const created = await AssessmentResultModel.create({
       student: req.user.id,
       domainScores,
-      trackScores,
+      trackScores: classification.trackScores,
       primaryTrack: primary.track,
       secondaryTrack: secondary.track,
-      decisionPath
+      decisionPath: classification.decisionPath,
+      answers: answersReview
     });
 
     return res.status(201).json({
       primaryTrack: primary,
       secondaryTrack: secondary,
-      allScores: trackScores,
+      allScores: classification.trackScores,
       domainScores,
-      decisionPath,
+      decisionPath: classification.decisionPath,
+      answers: answersReview,
+      model: getModelInfo(),
       assessmentId: created._id.toString()
     });
   } catch (error) {
@@ -254,31 +167,28 @@ export async function getLatestAptitudeAssessment(
       });
     }
 
-    // trackScores stored sa DB (same shape as TrackScores)
-    const trackScores: TrackScores =
-      latest.trackScores ?? createEmptyTrackScores();
+    const trackScores = latest.trackScores ?? {
+      stem: 0,
+      abm: 0,
+      humss: 0,
+      gas: 0
+    };
 
-    // Re-rank tracks based on stored scores
-    const sortedTracks = (Object.entries(trackScores) as [TrackKey, number][])
-      .sort(([, a], [, b]) => b - a)
-      .map(([track, score]) => ({ track, score }));
-
-    const primary = sortedTracks[0];
-    const secondary = sortedTracks[1] ?? primary;
-
-    if (!primary) {
-      return res.status(400).json({
-        success: false,
-        message: "Could not compute primary track from stored scores"
-      });
-    }
-
+    // Use the stored decision-tree result directly (authoritative).
     return res.json({
-      primaryTrack: primary,
-      secondaryTrack: secondary,
+      primaryTrack: {
+        track: latest.primaryTrack,
+        score: trackScores[latest.primaryTrack] ?? 0
+      },
+      secondaryTrack: {
+        track: latest.secondaryTrack,
+        score: trackScores[latest.secondaryTrack] ?? 0
+      },
       allScores: trackScores,
       domainScores: latest.domainScores,
       decisionPath: latest.decisionPath ?? [],
+      answers: latest.answers ?? [],
+      model: getModelInfo(),
       assessmentId: latest._id?.toString?.() ?? String(latest._id)
     });
   } catch (error) {
@@ -291,11 +201,11 @@ export async function getLatestAptitudeAssessment(
   }
 }
 
-// Helper: kunin top 2–3 domains for explanation
-function getTopDomains(domainScores: DomainScores): AptitudeDomain[] {
-  const sorted = (Object.entries(domainScores) as [AptitudeDomain, number][])
-    .sort(([, a], [, b]) => b - a)
-    .map(([domain]) => domain);
-
-  return sorted.slice(0, 3);
+/**
+ * GET /api/assessments/model-info
+ * Exposes C4.5 model metadata (algorithm, features, accuracy) for transparency
+ * and thesis documentation.
+ */
+export function getAssessmentModelInfo(_req: Request, res: Response): Response {
+  return res.json({ success: true, model: getModelInfo() });
 }

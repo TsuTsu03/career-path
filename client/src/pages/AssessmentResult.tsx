@@ -33,12 +33,32 @@ interface DomainScores {
   entrepreneurial: number;
 }
 
+export interface AnswerReviewItem {
+  questionId: number;
+  domain: AptitudeDomain;
+  selectedOptionId: string;
+  correctOptionId: string;
+  isCorrect: boolean;
+}
+
+export interface ModelInfo {
+  algorithm: string;
+  trainingExamples: number;
+  features: string[];
+  classes: string[];
+  leaves: number;
+  depth: number;
+  accuracy: number; // 0..1 holdout accuracy
+}
+
 export interface AssessmentResult {
   primaryTrack: TrackScore;
   secondaryTrack: TrackScore;
   allScores: TrackScores;
   domainScores: DomainScores;
   decisionPath: string[];
+  answers?: AnswerReviewItem[];
+  model?: ModelInfo;
   assessmentId?: string;
 }
 
@@ -113,8 +133,8 @@ export default function AssessmentResultView({
             <h2 className="text-gray-900 mb-2">Aptitude Assessment Results</h2>
             <p className="text-gray-600">
               Based on your performance across different aptitude domains,
-              CAREER PATH generated a recommended SHS track using a
-              decision-tree logic.
+              CAREER PATH generated a recommended SHS track using a trained
+              C4.5 decision tree.
             </p>
             {result.assessmentId && (
               <p className="text-sm text-gray-500 mt-2">
@@ -203,7 +223,7 @@ export default function AssessmentResultView({
         <h3 className="text-gray-900 mb-2">Track Score Comparison</h3>
         <p className="text-gray-600 mb-6 text-sm">
           These scores are computed from your aptitude performance and mapped to
-          SHS tracks using rule-based decision logic (decision tree).
+          SHS tracks using a trained C4.5 decision tree.
         </p>
 
         <div className="space-y-4">

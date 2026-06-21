@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import PasswordInput from "../components/PasswordInput";
 
 type RegisterResponse = {
   success: boolean;
@@ -183,9 +184,8 @@ export default function Register() {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Password
             </label>
-            <input
+            <PasswordInput
               ref={passwordRef}
-              type="password"
               placeholder="••••••••"
               value={password}
               onChange={(e) => {
@@ -270,8 +270,7 @@ export default function Register() {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Confirm Password
             </label>
-            <input
-              type="password"
+            <PasswordInput
               placeholder="••••••••"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}

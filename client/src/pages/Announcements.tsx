@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "../lib/api";
 
 interface Announcement {
   id: string;
@@ -10,59 +11,30 @@ interface Announcement {
   important: boolean;
 }
 
+interface AnnouncementsListResponse {
+  success: boolean;
+  announcements: Announcement[];
+}
+
 export default function Announcements() {
-  const [announcements] = useState<Announcement[]>([
-    {
-      id: "1",
-      title: "Career Fair 2024: Explore Your Future",
-      content:
-        "Join us for the Annual Career Fair on November 20, 2024, from 9:00 AM to 4:00 PM at the School Gymnasium. Meet representatives from top universities and industries to learn about different career paths and educational opportunities. All SHS students are encouraged to attend!",
-      category: "event",
-      date: "2024-11-13",
-      author: "Guidance Office",
-      important: true
-    },
-    {
-      id: "2",
-      title: "SHS Track Selection Deadline Extended",
-      content:
-        "The deadline for SHS track selection has been extended to November 30, 2024. Students who have not yet completed their career assessment or submitted their track preference forms should do so before the deadline. Visit the Guidance Office for assistance.",
-      category: "deadline",
-      date: "2024-11-12",
-      author: "Academic Affairs",
-      important: true
-    },
-    {
-      id: "3",
-      title: "Workshop: Introduction to STEM Careers",
-      content:
-        "A special workshop on STEM (Science, Technology, Engineering, and Mathematics) careers will be held on November 18, 2024, at 2:00 PM in Room 301. Guest speakers from various STEM fields will share their experiences and career insights. Open to all interested students.",
-      category: "event",
-      date: "2024-11-11",
-      author: "STEM Department",
-      important: false
-    },
-    {
-      id: "4",
-      title: "New Career Resources Available in Library",
-      content:
-        "The school library has added new career exploration books, college guides, and industry magazines to help students make informed decisions about their future. Resources are available for all SHS tracks including STEM, ABM, HUMSS, and GAS.",
-      category: "general",
-      date: "2024-11-10",
-      author: "Library Services",
-      important: false
-    },
-    {
-      id: "5",
-      title: "Online Seminar: Entrepreneurship in the Digital Age",
-      content:
-        "ABM students and aspiring entrepreneurs are invited to an online seminar on November 22, 2024, at 3:00 PM. Learn about starting a business, digital marketing, and financial management from successful young entrepreneurs. Registration link will be sent via email.",
-      category: "career",
-      date: "2024-11-09",
-      author: "ABM Department",
-      important: false
-    }
-  ]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await api<AnnouncementsListResponse>("/announcements");
+        setAnnouncements(res.announcements);
+      } catch (err) {
+        console.error("Failed to load announcements", err);
+        setError("Failed to load announcements.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    void load();
+  }, []);
 
   const [selectedAnnouncement, setSelectedAnnouncement] =
     useState<Announcement | null>(null);
@@ -326,6 +298,21 @@ export default function Announcements() {
 
       {/* Announcements List */}
       <div className="space-y-4">
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4">
+            {error}
+          </div>
+        )}
+        {loading && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center text-gray-600">
+            Loading announcements…
+          </div>
+        )}
+        {!loading && !error && filteredAnnouncements.length === 0 && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center text-gray-600">
+            No announcements yet. Please check back later.
+          </div>
+        )}
         {filteredAnnouncements.map((announcement) => (
           <div
             key={announcement.id}

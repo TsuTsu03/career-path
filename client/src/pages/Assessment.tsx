@@ -336,7 +336,9 @@ export default function Assessment({
               </li>
               <li className="flex items-start">
                 <span className="w-5 h-5 text-blue-600 mr-2 mt-0.5">✔</span>
-                <span>Results are processed using a decision-tree logic</span>
+                <span>
+                  Results are classified using a C4.5 decision tree
+                </span>
               </li>
             </ul>
           </div>

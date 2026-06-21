@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
+import PasswordInput from "../components/PasswordInput";
 
 interface SetupResponse {
   success: boolean;
@@ -100,8 +101,7 @@ export default function AdminSetupPassword() {
             <label className="mb-2 block text-sm text-slate-700">
               New Password
             </label>
-            <input
-              type="password"
+            <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
@@ -113,8 +113,7 @@ export default function AdminSetupPassword() {
             <label className="mb-2 block text-sm text-slate-700">
               Confirm Password
             </label>
-            <input
-              type="password"
+            <PasswordInput
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500"

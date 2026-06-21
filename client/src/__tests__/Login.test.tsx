@@ -43,7 +43,7 @@ describe("Login page", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/student login/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /sign in/i })
     ).toBeInTheDocument();
@@ -77,7 +77,7 @@ describe("Login page", () => {
     );
 
     await user.type(screen.getByLabelText(/email/i), "Juan@Example.com");
-    await user.type(screen.getByLabelText(/password/i), "Password1!");
+    await user.type(screen.getByLabelText("Password"), "Password1!");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     await waitFor(() => {
@@ -107,7 +107,7 @@ describe("Login page", () => {
     );
 
     await user.type(screen.getByLabelText(/email/i), "wrong@example.com");
-    await user.type(screen.getByLabelText(/password/i), "wrongpass");
+    await user.type(screen.getByLabelText("Password"), "wrongpass");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     expect(
@@ -137,7 +137,7 @@ describe("Login page", () => {
     );
 
     await user.type(screen.getByLabelText(/email/i), "admin@example.com");
-    await user.type(screen.getByLabelText(/password/i), "Password1!");
+    await user.type(screen.getByLabelText("Password"), "Password1!");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     expect(
@@ -162,7 +162,7 @@ describe("Login page", () => {
     );
 
     await user.type(screen.getByLabelText(/email/i), "juan@example.com");
-    await user.type(screen.getByLabelText(/password/i), "Password1!");
+    await user.type(screen.getByLabelText("Password"), "Password1!");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     expect(

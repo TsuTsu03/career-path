@@ -1,5 +1,6 @@
 // client/src/pages/TrackRecommendations.tsx
 import { useEffect, useState, type JSX } from "react";
+import { useNavigate } from "react-router-dom";
 import jsPDF from "jspdf";
 
 const API_BASE_URL =
@@ -189,6 +190,7 @@ function getStoredToken(): string | null {
 /* ---------------- Component ---------------- */
 
 export default function TrackRecommendations(): JSX.Element {
+  const navigate = useNavigate();
   const [assessmentResults, setAssessmentResults] =
     useState<AssessmentResults | null>(null);
   const [loading, setLoading] = useState(true);
@@ -709,12 +711,18 @@ export default function TrackRecommendations(): JSX.Element {
       {/* Action Buttons */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
         <h3 className="text-gray-900 mb-4">Next Steps</h3>
-        <div className="w-full flex justify-center">
+        <div className="w-full flex flex-col sm:flex-row justify-center gap-3">
           <button
             onClick={handleDownloadPdf}
-            className="w-md px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             Download Results
+          </button>
+          <button
+            onClick={() => navigate("/student/queries")}
+            className="px-4 py-3 bg-white text-blue-700 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+          >
+            Consult Counselor
           </button>
         </div>
       </div>

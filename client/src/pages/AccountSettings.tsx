@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, ApiError } from "../lib/api";
+import PasswordInput from "../components/PasswordInput";
 
 interface AccountSettingsProps {
   user: {
@@ -199,8 +200,7 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
                     <label className="block text-gray-700 mb-2">
                       Current Password
                     </label>
-                    <input
-                      type="password"
+                    <PasswordInput
                       value={settings.currentPassword}
                       onChange={(e) =>
                         setSettings({
@@ -215,8 +215,7 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
                     <label className="block text-gray-700 mb-2">
                       New Password
                     </label>
-                    <input
-                      type="password"
+                    <PasswordInput
                       value={settings.newPassword}
                       onChange={(e) =>
                         setSettings({
@@ -231,8 +230,7 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
                     <label className="block text-gray-700 mb-2">
                       Confirm New Password
                     </label>
-                    <input
-                      type="password"
+                    <PasswordInput
                       value={settings.confirmPassword}
                       onChange={(e) =>
                         setSettings({

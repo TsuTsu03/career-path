@@ -1,12 +1,26 @@
 // client/src/pages/StudentAssessmentResult.tsx
+import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { AssessmentResult } from "./AssessmentResult";
+import { aptitudeQuestionBank } from "../data/aptitudeQuestions";
 
 type LocationState = AssessmentResult | null;
+
+function findQuestion(questionId: number) {
+  return aptitudeQuestionBank.find((q) => q.id === questionId);
+}
+
+function optionLabel(questionId: number, optionId: string): string {
+  const q = findQuestion(questionId);
+  if (!q) return optionId || "—";
+  const opt = q.options.find((o) => o.id === optionId);
+  return opt ? opt.label : optionId || "(no answer)";
+}
 
 export default function StudentAssessmentResult() {
   const nav = useNavigate();
   const location = useLocation();
+  const [showReview, setShowReview] = useState(false);
 
   // We treat location.state as the actual AssessmentResult object
   const result = (location.state as LocationState) ?? null;
@@ -76,7 +90,9 @@ export default function StudentAssessmentResult() {
                 </li>
                 <li className="flex items-start">
                   <span className="w-5 h-5 text-blue-600 mr-2 mt-0.5">✔</span>
-                  <span>Results are processed using a decision-tree logic</span>
+                  <span>
+                    Results are classified using a C4.5 decision tree
+                  </span>
                 </li>
               </ul>
             </div>
@@ -105,8 +121,13 @@ export default function StudentAssessmentResult() {
     secondaryTrack,
     allScores,
     domainScores,
-    decisionPath
+    decisionPath,
+    answers,
+    model
   } = result;
+
+  const reviewAnswers = answers ?? [];
+  const correctCount = reviewAnswers.filter((a) => a.isCorrect).length;
 
   const trackLabels: Record<string, string> = {
     stem: "STEM (Science, Technology, Engineering, and Mathematics)",
@@ -274,19 +295,146 @@ export default function StudentAssessmentResult() {
 
         {/* Decision path */}
         <section className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4">
-            How this recommendation was generated
-          </h3>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h3 className="text-sm font-semibold text-gray-900">
+              How this recommendation was generated (C4.5 Decision Tree)
+            </h3>
+            {model && (
+              <span className="inline-flex items-center gap-2 rounded-full bg-indigo-50 border border-indigo-200 px-3 py-1 text-xs text-indigo-700">
+                <span className="font-semibold">{model.algorithm}</span>
+                <span>· {(model.accuracy * 100).toFixed(1)}% accuracy</span>
+              </span>
+            )}
+          </div>
           <p className="text-sm text-gray-600 mb-3">
-            Below is a simplified explanation of the decision-tree reasoning
-            used to recommend your SHS track:
+            Your recommended SHS track was produced by a trained{" "}
+            <span className="font-medium">C4.5 decision tree</span>. Below is the
+            exact path the tree followed from its root node down to the final
+            decision (leaf):
           </p>
           <ol className="list-decimal pl-5 space-y-1 text-sm text-gray-700">
             {decisionPath.map((step, idx) => (
               <li key={idx}>{step}</li>
             ))}
           </ol>
+          {model && (
+            <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+              <div className="rounded-lg bg-gray-50 border border-gray-200 p-3">
+                <p className="text-xs text-gray-500">Training samples</p>
+                <p className="text-sm font-semibold text-gray-900">
+                  {model.trainingExamples}
+                </p>
+              </div>
+              <div className="rounded-lg bg-gray-50 border border-gray-200 p-3">
+                <p className="text-xs text-gray-500">Features</p>
+                <p className="text-sm font-semibold text-gray-900">
+                  {model.features.length}
+                </p>
+              </div>
+              <div className="rounded-lg bg-gray-50 border border-gray-200 p-3">
+                <p className="text-xs text-gray-500">Tree leaves</p>
+                <p className="text-sm font-semibold text-gray-900">
+                  {model.leaves}
+                </p>
+              </div>
+              <div className="rounded-lg bg-gray-50 border border-gray-200 p-3">
+                <p className="text-xs text-gray-500">Tree depth</p>
+                <p className="text-sm font-semibold text-gray-900">
+                  {model.depth}
+                </p>
+              </div>
+            </div>
+          )}
         </section>
+
+        {/* Answer review (correct / wrong per item) */}
+        {reviewAnswers.length > 0 && (
+          <section className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-1">
+                  Answer Review
+                </h3>
+                <p className="text-sm text-gray-600">
+                  You answered{" "}
+                  <span className="font-semibold text-green-700">
+                    {correctCount}
+                  </span>{" "}
+                  out of{" "}
+                  <span className="font-semibold">{reviewAnswers.length}</span>{" "}
+                  items correctly.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowReview((v) => !v)}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                {showReview ? "Hide details" : "Show correct/wrong answers"}
+              </button>
+            </div>
+
+            {showReview && (
+              <div className="mt-5 space-y-3">
+                {reviewAnswers.map((item, idx) => {
+                  const question = findQuestion(item.questionId);
+                  return (
+                    <div
+                      key={`${item.questionId}-${idx}`}
+                      className={`rounded-lg border p-4 ${
+                        item.isCorrect
+                          ? "border-green-200 bg-green-50"
+                          : "border-red-200 bg-red-50"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-sm font-medium text-gray-900">
+                          {idx + 1}. {question ? question.stem : "Question"}
+                        </p>
+                        <span
+                          className={`shrink-0 text-xs font-semibold px-2 py-1 rounded-full ${
+                            item.isCorrect
+                              ? "bg-green-600 text-white"
+                              : "bg-red-600 text-white"
+                          }`}
+                        >
+                          {item.isCorrect ? "Correct" : "Wrong"}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs uppercase tracking-wide text-gray-500">
+                        {item.domain}
+                      </p>
+                      <div className="mt-2 text-sm">
+                        <p className="text-gray-700">
+                          Your answer:{" "}
+                          <span
+                            className={
+                              item.isCorrect
+                                ? "text-green-700 font-medium"
+                                : "text-red-700 font-medium"
+                            }
+                          >
+                            {optionLabel(item.questionId, item.selectedOptionId)}
+                          </span>
+                        </p>
+                        {!item.isCorrect && (
+                          <p className="text-gray-700">
+                            Correct answer:{" "}
+                            <span className="text-green-700 font-medium">
+                              {optionLabel(
+                                item.questionId,
+                                item.correctOptionId
+                              )}
+                            </span>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
       </main>
     </div>
   );
