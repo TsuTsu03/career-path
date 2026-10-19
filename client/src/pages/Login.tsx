@@ -73,6 +73,8 @@ export default function Login() {
       } else {
         setErr("Login failed");
       }
+    } finally {
+      setLoading(false);
     }
   };
 
