@@ -39,6 +39,9 @@ export interface AnswerReviewItem {
   selectedOptionId: string;
   correctOptionId: string;
   isCorrect: boolean;
+  // Question text and choices, sent by the server only after submission.
+  stem?: string;
+  options?: { id: string; label: string }[];
 }
 
 export interface ModelInfo {

@@ -31,6 +31,40 @@ jest.mock("react-router-dom", () => {
   };
 });
 
+const sampleQuestionSet = {
+  success: true,
+  assessmentToken: "signed-question-set",
+  questions: [
+    {
+      id: 1,
+      domain: "verbal",
+      stem: "Which word is MOST similar in meaning to CALM?",
+      options: [
+        { id: "a", label: "Angry" },
+        { id: "b", label: "Peaceful" }
+      ]
+    },
+    {
+      id: 31,
+      domain: "numerical",
+      stem: "What is 15 x 12?",
+      options: [
+        { id: "a", label: "170" },
+        { id: "b", label: "180" }
+      ]
+    }
+  ]
+};
+
+// No saved result yet, and the server hands out a question set on start.
+function mockNoResultWithQuestions() {
+  fetchMock.mockImplementation(async (input) =>
+    String(input).includes("/aptitude/questions")
+      ? createJsonResponse(sampleQuestionSet)
+      : createJsonResponse({}, { status: 404, ok: false })
+  );
+}
+
 describe("Assessment page", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -120,9 +154,7 @@ describe("Assessment page", () => {
     const user = userEvent.setup();
     localStorage.setItem("access", "fake-token");
 
-    fetchMock.mockResolvedValue(
-      createJsonResponse({}, { status: 404, ok: false })
-    );
+    mockNoResultWithQuestions();
 
     render(
       <MemoryRouter>
@@ -142,9 +174,7 @@ describe("Assessment page", () => {
     const user = userEvent.setup();
     localStorage.setItem("access", "fake-token");
 
-    fetchMock.mockResolvedValue(
-      createJsonResponse({}, { status: 404, ok: false })
-    );
+    mockNoResultWithQuestions();
 
     render(
       <MemoryRouter>
@@ -178,9 +208,7 @@ describe("Assessment page", () => {
     const user = userEvent.setup();
     localStorage.setItem("access", "fake-token");
 
-    fetchMock.mockResolvedValue(
-      createJsonResponse({}, { status: 404, ok: false })
-    );
+    mockNoResultWithQuestions();
 
     render(
       <MemoryRouter>
@@ -210,5 +238,49 @@ describe("Assessment page", () => {
     await waitFor(() => {
       expect(screen.getByText(/question 2 of/i)).toBeInTheDocument();
     });
+  });
+
+  it("submits the issued question set together with its token", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("access", "fake-token");
+    mockNoResultWithQuestions();
+
+    render(
+      <MemoryRouter>
+        <Assessment />
+      </MemoryRouter>
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: /start assessment/i })
+    );
+
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse({ status: 201, primaryTrack: { track: "stem" } })
+    );
+
+    await user.click(screen.getByRole("button", { name: /peaceful/i }));
+    await user.click(screen.getByRole("button", { name: /next/i }));
+    await user.click(await screen.findByRole("button", { name: /180/ }));
+    await user.click(screen.getByRole("button", { name: /view results/i }));
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([, init]) => init?.method === "POST")
+      ).toBe(true);
+    });
+
+    const submitCall = fetchMock.mock.calls.find(
+      ([, init]) => init?.method === "POST"
+    );
+    expect(submitCall).toBeTruthy();
+    const body = JSON.parse(String(submitCall?.[1]?.body)) as {
+      assessmentToken: string;
+      answers: { questionId: number; selectedOptionId: string }[];
+    };
+    expect(body.assessmentToken).toBe("signed-question-set");
+    expect(body.answers).toEqual([
+      { questionId: 1, selectedOptionId: "b" },
+      { questionId: 31, selectedOptionId: "b" }
+    ]);
   });
 });

@@ -3,6 +3,10 @@ import dotenv from "dotenv";
 
 dotenv.config(); // <-- add this
 
+// Treat request values in query filters as plain values, never as operators
+// like $ne or $gt. Queries that need a real operator use mongoose.trusted().
+mongoose.set("sanitizeFilter", true);
+
 export const connectDB = async () => {
   try {
     if (!process.env.MONGO_URI) {

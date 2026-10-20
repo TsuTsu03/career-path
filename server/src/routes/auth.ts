@@ -3,8 +3,15 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
+import mongoose from "mongoose";
 import User from "../models/User.js";
 import { generateStudentId } from "../utils/generateStudentId.js";
+import {
+  loginLimiter,
+  registerLimiter,
+  resendVerificationLimiter,
+  tokenLinkLimiter
+} from "../middleware/rateLimit.js";
 import {
   requireAuth,
   requireRole,
@@ -91,6 +98,17 @@ async function sendAdminSetupEmail(
   });
 }
 
+// Tokens come straight from the request body. Only accept plain strings so a
+// body like {"token": {"$ne": ""}} can never reach the query as an operator.
+function isTokenAndId(token: unknown, id: unknown): token is string {
+  return (
+    typeof token === "string" &&
+    /^[a-f0-9]{64}$/.test(token) &&
+    typeof id === "string" &&
+    mongoose.isValidObjectId(id)
+  );
+}
+
 function isStrongPassword(password: string) {
   const hasLetter = /[A-Za-z]/.test(password);
   const hasUpper = /[A-Z]/.test(password);
@@ -102,7 +120,7 @@ function isStrongPassword(password: string) {
 }
 
 /* =============== REGISTER (STUDENT ONLY) =============== */
-router.post("/register", async (req, res) => {
+router.post("/register", registerLimiter, async (req, res) => {
   try {
     const { fullName, email, password, schoolCode, batch } = req.body;
 
@@ -299,11 +317,18 @@ router.post(
 );
 
 /* =============== ADMIN SETUP PASSWORD =============== */
-router.post("/admin/setup-password", async (req, res) => {
+router.post("/admin/setup-password", tokenLinkLimiter, async (req, res) => {
   try {
     const { token, id, password, confirmPassword } = req.body;
 
-    if (!token || !id || !password || !confirmPassword) {
+    if (!isTokenAndId(token, id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired setup link"
+      });
+    }
+
+    if (!password || !confirmPassword) {
       return res.status(400).json({
         success: false,
         message: "Missing required fields"
@@ -328,7 +353,7 @@ router.post("/admin/setup-password", async (req, res) => {
       _id: id,
       role: "admin",
       passwordSetupToken: token,
-      passwordSetupTokenExpires: { $gt: new Date() }
+      passwordSetupTokenExpires: mongoose.trusted({ $gt: new Date() })
     });
 
     if (!user) {
@@ -361,7 +386,7 @@ router.post("/admin/setup-password", async (req, res) => {
 });
 
 /* =============== RESEND VERIFICATION EMAIL =============== */
-router.post("/resend-verification", async (req, res) => {
+router.post("/resend-verification", resendVerificationLimiter, async (req, res) => {
   try {
     const { email } = req.body;
 
@@ -418,21 +443,21 @@ router.post("/resend-verification", async (req, res) => {
 });
 
 /* =============== VERIFY EMAIL =============== */
-router.post("/verify-email", async (req, res) => {
+router.post("/verify-email", tokenLinkLimiter, async (req, res) => {
   try {
     const { token, id } = req.body;
 
-    if (!token || !id) {
+    if (!isTokenAndId(token, id)) {
       return res.status(400).json({
         success: false,
-        message: "Missing token or id"
+        message: "Invalid or expired verification link"
       });
     }
 
     const user = await User.findOne({
       _id: id,
       verificationToken: token,
-      verificationTokenExpires: { $gt: new Date() }
+      verificationTokenExpires: mongoose.trusted({ $gt: new Date() })
     });
 
     if (!user) {
@@ -462,7 +487,7 @@ router.post("/verify-email", async (req, res) => {
 });
 
 /* =============== LOGIN =============== */
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   try {
     const { email, password, role } = req.body;
 

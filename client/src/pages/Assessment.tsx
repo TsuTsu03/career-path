@@ -1,12 +1,33 @@
 // client/src/components/Assessment.tsx
 import { useState, useEffect, type JSX } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  aptitudeQuestions,
-  type AssessmentOption,
-  type AptitudeDomain,
-  type TrackKey
-} from "../data/aptitudeQuestions";
+type TrackKey = "stem" | "abm" | "humss" | "gas";
+
+type AptitudeDomain =
+  | "verbal"
+  | "numerical"
+  | "scientific"
+  | "abstract"
+  | "clerical"
+  | "entrepreneurial";
+
+interface AssessmentOption {
+  id: string;
+  label: string;
+}
+
+// Questions come from the server without the correct answer.
+interface AssessmentQuestion {
+  id: number;
+  domain: AptitudeDomain;
+  stem: string;
+  options: AssessmentOption[];
+}
+
+interface QuestionSetResponse {
+  questions: AssessmentQuestion[];
+  assessmentToken: string;
+}
 
 interface TrackScore {
   track: TrackKey;
@@ -55,7 +76,7 @@ function getStoredToken(): string | null {
 }
 
 export default function Assessment({
-  onComplete
+  onComplete,
 }: AssessmentProps): JSX.Element {
   const navigate = useNavigate();
 
@@ -64,12 +85,15 @@ export default function Assessment({
     Record<number, AssessmentOption | undefined>
   >({});
   const [started, setStarted] = useState(false);
+  const [questions, setQuestions] = useState<AssessmentQuestion[]>([]);
+  const [assessmentToken, setAssessmentToken] = useState<string | null>(null);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // NEW: existing/latest result
   const [existingResult, setExistingResult] = useState<AssessmentResult | null>(
-    null
+    null,
   );
   const [checkingExisting, setCheckingExisting] = useState(true);
 
@@ -85,12 +109,12 @@ export default function Assessment({
       try {
         const headers: HeadersInit = {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         };
 
         const res = await fetch(`${API_BASE_URL}/assessments/aptitude/latest`, {
           method: "GET",
-          headers
+          headers,
         });
 
         if (res.status === 404) {
@@ -104,7 +128,7 @@ export default function Assessment({
           // Any error: just proceed as if no existing result
           console.error(
             "Failed to load existing assessment result:",
-            res.status
+            res.status,
           );
           setCheckingExisting(false);
           return;
@@ -126,6 +150,63 @@ export default function Assessment({
     setAnswers((prev) => ({ ...prev, [questionId]: option }));
   };
 
+  const startAssessment = async (): Promise<void> => {
+    setLoadingQuestions(true);
+    setError(null);
+
+    const token = getStoredToken();
+    if (!token) {
+      setError(
+        "No token found. Please log in again before taking the assessment.",
+      );
+      setLoadingQuestions(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/assessments/aptitude/questions`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!res.ok) {
+        let message = `Could not load the assessment (${res.status})`;
+        try {
+          const body = (await res.json()) as { message?: string };
+          if (body.message) message = body.message;
+        } catch {
+          // ignore JSON parse error
+        }
+        if (res.status === 401) {
+          message = "Your session may have expired. Please log in again.";
+        }
+        throw new Error(message);
+      }
+
+      const body = (await res.json()) as QuestionSetResponse;
+      setQuestions(body.questions);
+      setAssessmentToken(body.assessmentToken);
+      setAnswers({});
+      setCurrentQuestion(0);
+      setStarted(true);
+    } catch (err) {
+      console.error(err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unexpected error while loading the assessment.",
+      );
+    } finally {
+      setLoadingQuestions(false);
+    }
+  };
+
   const submitToBackend = async (): Promise<void> => {
     setSubmitting(true);
     setError(null);
@@ -134,32 +215,33 @@ export default function Assessment({
 
     if (!token) {
       setError(
-        "No token found. Please log in again before taking the assessment."
+        "No token found. Please log in again before taking the assessment.",
       );
       setSubmitting(false);
       return;
     }
 
     const payload = {
-      answers: aptitudeQuestions.map((q) => {
+      assessmentToken,
+      answers: questions.map((q) => {
         const selected = answers[q.id];
         return {
           questionId: q.id,
-          selectedOptionId: selected ? selected.id : ""
+          selectedOptionId: selected ? selected.id : "",
         };
-      })
+      }),
     };
 
     try {
       const headers: HeadersInit = {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`
+        Authorization: `Bearer ${token}`,
       };
 
       const res = await fetch(`${API_BASE_URL}/assessments/aptitude`, {
         method: "POST",
         headers,
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -187,7 +269,7 @@ export default function Assessment({
       }
 
       navigate("/student/assessment/result", {
-        state: body
+        state: body,
       });
     } catch (err) {
       console.error(err);
@@ -202,7 +284,7 @@ export default function Assessment({
   };
 
   const handleNext = (): void => {
-    if (currentQuestion < aptitudeQuestions.length - 1) {
+    if (currentQuestion < questions.length - 1) {
       setCurrentQuestion((prev) => prev + 1);
     } else {
       void submitToBackend();
@@ -336,9 +418,7 @@ export default function Assessment({
               </li>
               <li className="flex items-start">
                 <span className="w-5 h-5 text-blue-600 mr-2 mt-0.5">✔</span>
-                <span>
-                  Results are classified using a C4.5 decision tree
-                </span>
+                <span>Results are classified using a C4.5 decision tree</span>
               </li>
             </ul>
           </div>
@@ -348,10 +428,11 @@ export default function Assessment({
           )}
 
           <button
-            onClick={() => setStarted(true)}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors"
+            onClick={() => void startAssessment()}
+            disabled={loadingQuestions}
+            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Start Assessment
+            {loadingQuestions ? "Loading questions..." : "Start Assessment"}
           </button>
         </div>
       </div>
@@ -360,8 +441,11 @@ export default function Assessment({
 
   /* ---------- Actual assessment (when started) ---------- */
 
-  const question = aptitudeQuestions[currentQuestion];
-  const progress = ((currentQuestion + 1) / aptitudeQuestions.length) * 100;
+  const question = questions[currentQuestion];
+  if (!question) {
+    return <></>;
+  }
+  const progress = ((currentQuestion + 1) / questions.length) * 100;
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -370,7 +454,7 @@ export default function Assessment({
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between mb-2">
             <span className="text-gray-700">
-              Question {currentQuestion + 1} of {aptitudeQuestions.length}
+              Question {currentQuestion + 1} of {questions.length}
             </span>
             <span className="text-gray-700">
               {Math.round(progress)}% Complete
@@ -439,7 +523,7 @@ export default function Assessment({
             disabled={!answers[question.id] || submitting}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {currentQuestion === aptitudeQuestions.length - 1
+            {currentQuestion === questions.length - 1
               ? submitting
                 ? "Submitting..."
                 : "View Results"

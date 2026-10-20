@@ -1,19 +1,13 @@
 // client/src/pages/StudentAssessmentResult.tsx
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import type { AssessmentResult } from "./AssessmentResult";
-import { aptitudeQuestionBank } from "../data/aptitudeQuestions";
+import type { AnswerReviewItem, AssessmentResult } from "./AssessmentResult";
 
 type LocationState = AssessmentResult | null;
 
-function findQuestion(questionId: number) {
-  return aptitudeQuestionBank.find((q) => q.id === questionId);
-}
-
-function optionLabel(questionId: number, optionId: string): string {
-  const q = findQuestion(questionId);
-  if (!q) return optionId || "—";
-  const opt = q.options.find((o) => o.id === optionId);
+function optionLabel(item: AnswerReviewItem, optionId: string): string {
+  if (!item.options) return optionId || "—";
+  const opt = item.options.find((o) => o.id === optionId);
   return opt ? opt.label : optionId || "(no answer)";
 }
 
@@ -376,7 +370,6 @@ export default function StudentAssessmentResult() {
             {showReview && (
               <div className="mt-5 space-y-3">
                 {reviewAnswers.map((item, idx) => {
-                  const question = findQuestion(item.questionId);
                   return (
                     <div
                       key={`${item.questionId}-${idx}`}
@@ -388,7 +381,7 @@ export default function StudentAssessmentResult() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <p className="text-sm font-medium text-gray-900">
-                          {idx + 1}. {question ? question.stem : "Question"}
+                          {idx + 1}. {item.stem || "Question"}
                         </p>
                         <span
                           className={`shrink-0 text-xs font-semibold px-2 py-1 rounded-full ${
@@ -413,17 +406,14 @@ export default function StudentAssessmentResult() {
                                 : "text-red-700 font-medium"
                             }
                           >
-                            {optionLabel(item.questionId, item.selectedOptionId)}
+                            {optionLabel(item, item.selectedOptionId)}
                           </span>
                         </p>
                         {!item.isCorrect && (
                           <p className="text-gray-700">
                             Correct answer:{" "}
                             <span className="text-green-700 font-medium">
-                              {optionLabel(
-                                item.questionId,
-                                item.correctOptionId
-                              )}
+                              {optionLabel(item, item.correctOptionId)}
                             </span>
                           </p>
                         )}
