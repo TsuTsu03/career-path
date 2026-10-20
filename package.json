@@ -5,24 +5,12 @@
   "scripts": {
     "dev": "concurrently \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "npm --prefix server run dev",
-    "dev:client": "npm --prefix client run dev"
+    "dev:client": "npm --prefix client run dev",
+    "test": "npm --prefix server test && npm --prefix client test",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix client exec tsc -- -b --noEmit",
+    "build": "npm --prefix client run build"
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/jest": "^30.0.0",
-    "@types/jspdf": "^1.3.3",
-    "@types/nodemailer": "^7.0.4",
-    "baseline-browser-mapping": "^2.10.0",
-    "concurrently": "^9.0.0",
-    "identity-obj-proxy": "^3.0.0",
-    "jest": "^30.3.0",
-    "jest-environment-jsdom": "^30.3.0",
-    "ts-jest": "^29.4.9"
-  },
-  "dependencies": {
-    "jspdf": "^3.0.3",
-    "nodemailer": "^7.0.10"
+    "concurrently": "^9.0.0"
   }
 }

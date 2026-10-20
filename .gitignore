@@ -12,3 +12,12 @@ dist/
 build/
 .vercel
 .env*
+
+# local agent/editor settings
+.claude/
+
+# crash dumps
+*.stackdump
+
+# server compile checks
+server/dist-check/
