@@ -1,12 +1,12 @@
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import crypto from "crypto";
-import nodemailer from "nodemailer";
 import mongoose from "mongoose";
 import User from "../models/User.js";
 import { generateStudentId } from "../utils/generateStudentId.js";
 import {
+  changePasswordLimiter,
+  forgotPasswordLimiter,
   loginLimiter,
   registerLimiter,
   resendVerificationLimiter,
@@ -17,123 +17,46 @@ import {
   requireRole,
   type AuthRequest
 } from "../middleware/auth.js";
+import {
+  sendAdminSetupEmail,
+  sendPasswordResetEmail,
+  sendVerificationEmail
+} from "../utils/mailer.js";
+import {
+  ONE_DAY_MS,
+  ONE_HOUR_MS,
+  PASSWORD_RULES,
+  cleanName,
+  hashToken,
+  isStrongPassword,
+  isTokenAndId,
+  isValidEmail,
+  newToken,
+  normalizeEmail
+} from "../utils/security.js";
 
 const router = express.Router();
-
-function createTransporter() {
-  const port = Number(process.env.EMAIL_PORT || 587);
-
-  return nodemailer.createTransport({
-    host: process.env.EMAIL_HOST || "smtp-relay.brevo.com",
-    port,
-    secure: port === 465,
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    }
-  });
-}
-
-/* =============== EMAIL SENDER HELPERS =============== */
-async function sendVerificationEmail(
-  email: string,
-  token: string,
-  userId: string
-) {
-  const transporter = createTransporter();
-
-  const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
-  const verifyUrl = `${clientUrl}/verify-email?token=${token}&id=${userId}`;
-
-  await transporter.sendMail({
-    from: `"${process.env.EMAIL_FROM_NAME || "CARPATH"}" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
-    to: email,
-    subject: "Verify your email",
-    html: `
-      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
-        <p>Hi,</p>
-        <p>Thank you for registering. Please click the button below to verify your email:</p>
-        <p>
-          <a href="${verifyUrl}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">
-            Verify Email
-          </a>
-        </p>
-        <p>Or copy and paste this link into your browser:</p>
-        <p><a href="${verifyUrl}">${verifyUrl}</a></p>
-        <p>This link will expire in 24 hours.</p>
-      </div>
-    `
-  });
-}
-
-async function sendAdminSetupEmail(
-  email: string,
-  token: string,
-  userId: string
-) {
-  const transporter = createTransporter();
-
-  const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
-  const setupUrl = `${clientUrl}/admin/setup-password?token=${token}&id=${userId}`;
-
-  await transporter.sendMail({
-    from: `"${process.env.EMAIL_FROM_NAME || "CARPATH"}" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
-    to: email,
-    subject: "Set up your admin account password",
-    html: `
-      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
-        <p>Hello,</p>
-        <p>An administrator account has been created for you in CAREER PATH.</p>
-        <p>Please click the button below to set your password:</p>
-        <p>
-          <a href="${setupUrl}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">
-            Set Password
-          </a>
-        </p>
-        <p>Or copy and paste this link into your browser:</p>
-        <p><a href="${setupUrl}">${setupUrl}</a></p>
-        <p>This link will expire in 24 hours.</p>
-      </div>
-    `
-  });
-}
-
-// Tokens come straight from the request body. Only accept plain strings so a
-// body like {"token": {"$ne": ""}} can never reach the query as an operator.
-function isTokenAndId(token: unknown, id: unknown): token is string {
-  return (
-    typeof token === "string" &&
-    /^[a-f0-9]{64}$/.test(token) &&
-    typeof id === "string" &&
-    mongoose.isValidObjectId(id)
-  );
-}
-
-function isStrongPassword(password: string) {
-  const hasLetter = /[A-Za-z]/.test(password);
-  const hasUpper = /[A-Z]/.test(password);
-  const hasNumber = /[0-9]/.test(password);
-  const hasSpecial = /[^A-Za-z0-9]/.test(password);
-  const isLongEnough = password.length >= 8;
-
-  return isLongEnough && hasLetter && hasUpper && hasNumber && hasSpecial;
-}
 
 /* =============== REGISTER (STUDENT ONLY) =============== */
 router.post("/register", registerLimiter, async (req, res) => {
   try {
-    const { fullName, email, password, schoolCode, batch } = req.body;
+    const { password, schoolCode, batch } = req.body;
 
-    const normalizedFullName = String(fullName ?? "").trim();
-    const normalizedEmail = String(email ?? "")
-      .trim()
-      .toLowerCase();
-    const rawPassword = String(password ?? "");
+    const normalizedFullName = cleanName(req.body.fullName);
+    const normalizedEmail = normalizeEmail(req.body.email);
+    const rawPassword = typeof password === "string" ? password : "";
 
     if (!normalizedFullName || !normalizedEmail || !rawPassword) {
       return res.status(400).json({
         success: false,
         message: "Full name, email, and password are required."
+      });
+    }
+
+    if (!isValidEmail(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid email address."
       });
     }
 
@@ -154,10 +77,13 @@ router.post("/register", registerLimiter, async (req, res) => {
 
     const hashed = await bcrypt.hash(rawPassword, 10);
 
-    const verificationToken = crypto.randomBytes(32).toString("hex");
-    const verificationTokenExpires = new Date(Date.now() + 1000 * 60 * 60 * 24);
+    const verificationToken = newToken();
+    const verificationTokenExpires = new Date(Date.now() + ONE_DAY_MS);
 
-    const studentId = await generateStudentId({ schoolCode, batch });
+    const studentId = await generateStudentId({
+      schoolCode: typeof schoolCode === "string" ? schoolCode : undefined,
+      batch: typeof batch === "string" ? batch : undefined
+    });
 
     const user = new User({
       fullName: normalizedFullName,
@@ -233,17 +159,20 @@ router.post(
   requireRole("admin"),
   async (req: AuthRequest, res) => {
     try {
-      const { fullName, email } = req.body;
-
-      const normalizedFullName = String(fullName ?? "").trim();
-      const normalizedEmail = String(email ?? "")
-        .trim()
-        .toLowerCase();
+      const normalizedFullName = cleanName(req.body.fullName);
+      const normalizedEmail = normalizeEmail(req.body.email);
 
       if (!normalizedFullName || !normalizedEmail) {
         return res.status(400).json({
           success: false,
           message: "Full name and email are required."
+        });
+      }
+
+      if (!isValidEmail(normalizedEmail)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please enter a valid email address."
         });
       }
 
@@ -255,10 +184,8 @@ router.post(
         });
       }
 
-      const passwordSetupToken = crypto.randomBytes(32).toString("hex");
-      const passwordSetupTokenExpires = new Date(
-        Date.now() + 1000 * 60 * 60 * 24
-      );
+      const passwordSetupToken = newToken();
+      const passwordSetupTokenExpires = new Date(Date.now() + ONE_DAY_MS);
 
       const user = new User({
         fullName: normalizedFullName,
@@ -386,61 +313,55 @@ router.post("/admin/setup-password", tokenLinkLimiter, async (req, res) => {
 });
 
 /* =============== RESEND VERIFICATION EMAIL =============== */
-router.post("/resend-verification", resendVerificationLimiter, async (req, res) => {
-  try {
-    const { email } = req.body;
+// Always answers the same way, so the response never reveals whether an
+// email address has an account.
+router.post(
+  "/resend-verification",
+  resendVerificationLimiter,
+  async (req, res) => {
+    const genericMessage =
+      "If that email belongs to an account that still needs verification, we sent a new link.";
 
-    const normalizedEmail = String(email ?? "")
-      .trim()
-      .toLowerCase();
+    try {
+      const normalizedEmail = normalizeEmail(req.body.email);
 
-    if (!normalizedEmail) {
-      return res.status(400).json({
+      if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please enter a valid email address."
+        });
+      }
+
+      const user = await User.findOne({ email: normalizedEmail });
+      if (!user || user.isVerified) {
+        return res.json({ success: true, message: genericMessage });
+      }
+
+      const verificationToken = newToken();
+      user.verificationToken = verificationToken;
+      user.verificationTokenExpires = new Date(Date.now() + ONE_DAY_MS);
+      await user.save();
+
+      try {
+        await sendVerificationEmail(
+          user.email,
+          verificationToken,
+          String(user._id)
+        );
+      } catch (emailErr) {
+        console.error("Error resending verification email:", emailErr);
+      }
+
+      return res.json({ success: true, message: genericMessage });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
         success: false,
-        message: "Email is required"
+        message: "Failed to resend verification email"
       });
     }
-
-    const user = await User.findOne({ email: normalizedEmail });
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found"
-      });
-    }
-
-    if (user.isVerified) {
-      return res.status(400).json({
-        success: false,
-        message: "Email is already verified"
-      });
-    }
-
-    const verificationToken = crypto.randomBytes(32).toString("hex");
-    const verificationTokenExpires = new Date(Date.now() + 1000 * 60 * 60 * 24);
-
-    user.verificationToken = verificationToken;
-    user.verificationTokenExpires = verificationTokenExpires;
-    await user.save();
-
-    await sendVerificationEmail(
-      user.email,
-      verificationToken,
-      String(user._id)
-    );
-
-    return res.json({
-      success: true,
-      message: "Verification email sent successfully"
-    });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to resend verification email"
-    });
   }
-});
+);
 
 /* =============== VERIFY EMAIL =============== */
 router.post("/verify-email", tokenLinkLimiter, async (req, res) => {
@@ -486,23 +407,143 @@ router.post("/verify-email", tokenLinkLimiter, async (req, res) => {
   }
 });
 
-/* =============== LOGIN =============== */
-router.post("/login", loginLimiter, async (req, res) => {
+/* =============== FORGOT PASSWORD =============== */
+// Same response whether or not the email exists.
+router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
+  const genericMessage =
+    "If that email belongs to an account, we sent a link to reset the password.";
+
   try {
-    const { email, password, role } = req.body;
+    const normalizedEmail = normalizeEmail(req.body.email);
 
-    const normalizedEmail = String(email ?? "")
-      .trim()
-      .toLowerCase();
-
-    const user = await User.findOne({ email: normalizedEmail });
-    if (!user) {
-      return res.status(401).json({
+    if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
+      return res.status(400).json({
         success: false,
-        message: "Invalid email or password"
+        message: "Please enter a valid email address."
       });
     }
 
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      return res.json({ success: true, message: genericMessage });
+    }
+
+    const token = newToken();
+    user.passwordResetTokenHash = hashToken(token);
+    user.passwordResetTokenExpires = new Date(Date.now() + ONE_HOUR_MS);
+    await user.save();
+
+    try {
+      await sendPasswordResetEmail(user.email, token, String(user._id), "reset");
+    } catch (emailErr) {
+      console.error("Error sending password reset email:", emailErr);
+    }
+
+    return res.json({ success: true, message: genericMessage });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+/* =============== RESET PASSWORD =============== */
+router.post("/reset-password", tokenLinkLimiter, async (req, res) => {
+  try {
+    const { token, id, password, confirmPassword } = req.body;
+
+    if (!isTokenAndId(token, id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired reset link"
+      });
+    }
+
+    if (typeof password !== "string" || password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Passwords do not match."
+      });
+    }
+
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({ success: false, message: PASSWORD_RULES });
+    }
+
+    const user = await User.findOne({
+      _id: id,
+      passwordResetTokenHash: hashToken(token),
+      passwordResetTokenExpires: mongoose.trusted({ $gt: new Date() })
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired reset link"
+      });
+    }
+
+    user.password = await bcrypt.hash(password, 10);
+    user.passwordResetTokenHash = undefined;
+    user.passwordResetTokenExpires = undefined;
+    // Opening the emailed link proves the person owns this address.
+    user.isVerified = true;
+    user.verificationToken = undefined;
+    user.verificationTokenExpires = undefined;
+    if (user.role === "admin") {
+      user.passwordSetupToken = undefined;
+      user.passwordSetupTokenExpires = undefined;
+    }
+    await user.save();
+
+    return res.json({
+      success: true,
+      role: user.role,
+      message: "Password updated. You can now log in."
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+/* =============== LOGIN =============== */
+router.post("/login", loginLimiter, async (req, res) => {
+  try {
+    const { password, role } = req.body;
+    const normalizedEmail = normalizeEmail(req.body.email);
+    const genericFailure = {
+      success: false,
+      message: "Invalid email or password"
+    };
+
+    const user = normalizedEmail
+      ? await User.findOne({ email: normalizedEmail })
+      : null;
+
+    if (!user || !user.password) {
+      // An admin created by another admin has no password until they open
+      // the setup link. Only the admin login page gets this hint.
+      if (user && user.role === "admin" && role === "admin") {
+        return res.status(403).json({
+          success: false,
+          needsPasswordSetup: true,
+          message:
+            "Please set up your password first using the link sent to your email."
+        });
+      }
+      return res.status(401).json(genericFailure);
+    }
+
+    const isMatch = await bcrypt.compare(
+      typeof password === "string" ? password : "",
+      user.password
+    );
+    if (!isMatch) {
+      return res.status(401).json(genericFailure);
+    }
+
+    // Role and verification checks come after the password check, so they
+    // never tell a stranger which emails have accounts.
     if (role && user.role !== role) {
       return res.status(403).json({
         success: false,
@@ -513,33 +554,10 @@ router.post("/login", loginLimiter, async (req, res) => {
       });
     }
 
-    if (user.role === "admin" && !user.password) {
-      return res.status(403).json({
-        success: false,
-        needsPasswordSetup: true,
-        message:
-          "Please set up your password first using the link sent to your email."
-      });
-    }
-
-    if (!user.password) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password"
-      });
-    }
-
-    const isMatch = await bcrypt.compare(String(password ?? ""), user.password);
-    if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password"
-      });
-    }
-
     if (!user.isVerified) {
       return res.status(401).json({
         success: false,
+        needsVerification: true,
         message: "Please verify your email before logging in."
       });
     }
@@ -567,7 +585,8 @@ router.post("/login", loginLimiter, async (req, res) => {
         id: user._id,
         fullName: user.fullName,
         email: user.email,
-        role: user.role
+        role: user.role,
+        studentId: user.studentId ?? null
       }
     });
   } catch (err) {
@@ -578,5 +597,129 @@ router.post("/login", loginLimiter, async (req, res) => {
     });
   }
 });
+
+/* =============== CURRENT USER =============== */
+router.get("/me", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = await User.findById(req.user!.id).select(
+      "fullName email role studentId createdAt"
+    );
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Account not found" });
+    }
+    return res.json({
+      success: true,
+      user: {
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role,
+        studentId: user.studentId ?? null,
+        createdAt: user.createdAt
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+router.patch("/me", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const fullName = cleanName(req.body.fullName);
+    if (!fullName) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Full name is required." });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user!.id,
+      { fullName },
+      { new: true }
+    ).select("fullName email role studentId");
+
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Account not found" });
+    }
+
+    return res.json({
+      success: true,
+      message: "Account details saved.",
+      user: {
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role,
+        studentId: user.studentId ?? null
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+/* =============== CHANGE PASSWORD =============== */
+router.post(
+  "/change-password",
+  requireAuth,
+  changePasswordLimiter,
+  async (req: AuthRequest, res) => {
+    try {
+      const { currentPassword, newPassword, confirmPassword } = req.body;
+
+      if (
+        typeof currentPassword !== "string" ||
+        typeof newPassword !== "string" ||
+        !currentPassword ||
+        !newPassword
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Current and new password are required."
+        });
+      }
+
+      if (newPassword !== confirmPassword) {
+        return res
+          .status(400)
+          .json({ success: false, message: "New passwords do not match." });
+      }
+
+      if (!isStrongPassword(newPassword)) {
+        return res
+          .status(400)
+          .json({ success: false, message: PASSWORD_RULES });
+      }
+
+      const user = await User.findById(req.user!.id);
+      if (!user || !user.password) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Account not found" });
+      }
+
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Current password is incorrect." });
+      }
+
+      user.password = await bcrypt.hash(newPassword, 10);
+      await user.save();
+
+      return res.json({ success: true, message: "Password changed." });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ success: false, message: "Server error" });
+    }
+  }
+);
 
 export default router;

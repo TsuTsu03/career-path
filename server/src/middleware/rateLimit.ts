@@ -56,7 +56,29 @@ export const resendVerificationLimiter = rateLimit({
   )
 });
 
-// Email-link endpoints (verify email, admin password setup).
+export const forgotPasswordLimiter = rateLimit({
+  windowMs: ONE_HOUR,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: ipAndEmailKey,
+  message: tooMany(
+    "Too many password reset requests. Please try again in an hour."
+  )
+});
+
+// Runs after requireAuth, so each signed-in user has their own counter.
+export const changePasswordLimiter = rateLimit({
+  windowMs: FIFTEEN_MINUTES,
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) =>
+    String((req as Request & { user?: { id?: string } }).user?.id ?? req.ip),
+  message: tooMany("Too many password attempts. Please wait 15 minutes.")
+});
+
+// Email-link endpoints (verify email, password setup and reset).
 export const tokenLinkLimiter = rateLimit({
   windowMs: FIFTEEN_MINUTES,
   limit: 20,

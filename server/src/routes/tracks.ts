@@ -1,23 +1,14 @@
-import express from "express";
+// server/src/routes/tracks.ts
+import { Router } from "express";
+import { requireAuth, requireRole } from "../middleware/auth.js";
+import { getTracks, updateTrack } from "../controllers/trackController.js";
 
-const router = express.Router();
+const router = Router();
 
-// GET /api/tracks
-router.get("/", async (_req, res) => {
-  // TODO: fetch track profiles (STEM, ABM, HUMSS, GAS, etc.)
-  return res.json({
-    success: true,
-    tracks: []
-  });
-});
+// GET /tracks — strand details for students and admins
+router.get("/", requireAuth, getTracks);
 
-// POST /api/tracks
-router.post("/", async (req, res) => {
-  // TODO: create or update track profile
-  return res.status(201).json({
-    success: true,
-    message: "Track saved"
-  });
-});
+// PUT /tracks/:code — admin edits a strand (stem, abm, humss, gas)
+router.put("/:code", requireAuth, requireRole("admin"), updateTrack);
 
 export default router;

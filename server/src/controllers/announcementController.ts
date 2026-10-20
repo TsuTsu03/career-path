@@ -1,9 +1,28 @@
 // server/src/controllers/announcementController.ts
 import type { Request, Response } from "express";
+import { isValidObjectId } from "mongoose";
 import Announcement, { type IAnnouncement } from "../models/Announcement.js";
 import type { AuthRequest } from "../middleware/auth.js";
 
 type AnnouncementCategory = "event" | "deadline" | "general" | "career";
+
+const CATEGORIES: AnnouncementCategory[] = [
+  "event",
+  "deadline",
+  "general",
+  "career"
+];
+const MAX_ANNOUNCEMENTS = 200;
+
+function cleanText(value: unknown, max: number): string | undefined {
+  return typeof value === "string" ? value.trim().slice(0, max) : undefined;
+}
+
+function cleanCategory(value: unknown): AnnouncementCategory | undefined {
+  return CATEGORIES.includes(value as AnnouncementCategory)
+    ? (value as AnnouncementCategory)
+    : undefined;
+}
 
 // Shape expected by the frontend (AdminAnnouncements.tsx / Announcements.tsx)
 function mapAnnouncementToDto(a: IAnnouncement) {
@@ -27,6 +46,7 @@ export const getAnnouncements = async (_req: Request, res: Response) => {
   try {
     const announcements = await Announcement.find()
       .sort({ important: -1, date: -1, createdAt: -1 })
+      .limit(MAX_ANNOUNCEMENTS)
       .exec();
 
     return res.json({
@@ -47,13 +67,11 @@ export const getAnnouncements = async (_req: Request, res: Response) => {
  */
 export const createAnnouncement = async (req: AuthRequest, res: Response) => {
   try {
-    const { title, content, category, author, important } = req.body as {
-      title?: string;
-      content?: string;
-      category?: AnnouncementCategory;
-      author?: string;
-      important?: boolean;
-    };
+    const title = cleanText(req.body?.title, 200);
+    const content = cleanText(req.body?.content, 10000);
+    const category = cleanCategory(req.body?.category);
+    const author = cleanText(req.body?.author, 120);
+    const important = req.body?.important;
 
     if (!title || !content) {
       return res.status(400).json({
@@ -66,7 +84,7 @@ export const createAnnouncement = async (req: AuthRequest, res: Response) => {
       title,
       content,
       category: category ?? "general",
-      author: author ?? "Admin",
+      author: author || "Admin",
       important: Boolean(important),
       date: new Date()
     });
@@ -89,14 +107,19 @@ export const createAnnouncement = async (req: AuthRequest, res: Response) => {
  */
 export const updateAnnouncement = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
-    const { title, content, category, author, important } = req.body as {
-      title?: string;
-      content?: string;
-      category?: AnnouncementCategory;
-      author?: string;
-      important?: boolean;
-    };
+    const id = String(req.params.id ?? "");
+    const title = cleanText(req.body?.title, 200);
+    const content = cleanText(req.body?.content, 10000);
+    const category = cleanCategory(req.body?.category);
+    const author = cleanText(req.body?.author, 120);
+    const important = req.body?.important;
+
+    if (!isValidObjectId(id)) {
+      return res.status(404).json({
+        success: false,
+        message: "Announcement not found."
+      });
+    }
 
     const announcement = await Announcement.findById(id);
     if (!announcement) {
@@ -106,10 +129,10 @@ export const updateAnnouncement = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    if (title !== undefined) announcement.title = title;
-    if (content !== undefined) announcement.content = content;
+    if (title) announcement.title = title;
+    if (content) announcement.content = content;
     if (category !== undefined) announcement.category = category;
-    if (author !== undefined) announcement.author = author;
+    if (author) announcement.author = author;
     if (important !== undefined) announcement.important = Boolean(important);
 
     await announcement.save();
@@ -132,7 +155,13 @@ export const updateAnnouncement = async (req: AuthRequest, res: Response) => {
  */
 export const deleteAnnouncement = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id ?? "");
+    if (!isValidObjectId(id)) {
+      return res.status(404).json({
+        success: false,
+        message: "Announcement not found."
+      });
+    }
 
     const deleted = await Announcement.findByIdAndDelete(id);
     if (!deleted) {

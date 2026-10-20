@@ -94,7 +94,7 @@ function withQuestionText(items: AnswerReviewItem[]) {
  * Reads the signed question set issued by GET /aptitude/questions.
  * Returns the question IDs only if the token is valid and belongs to `userId`.
  */
-function readAssessmentSession(
+export function readAssessmentSession(
   token: unknown,
   userId: string
 ): number[] | null {
@@ -119,7 +119,7 @@ function readAssessmentSession(
   }
 }
 
-function isValidSubmission(
+export function isValidSubmission(
   answers: unknown[],
   issuedIds: number[]
 ): answers is SubmittedAnswer[] {
@@ -324,6 +324,12 @@ export async function createAptitudeAssessment(
       assessmentId: created._id.toString()
     });
   } catch (error) {
+    if ((error as { code?: number })?.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "You have already taken the assessment."
+      });
+    }
     // eslint-disable-next-line no-console
     console.error("Error saving assessment result:", error);
     return res.status(500).json({

@@ -27,7 +27,9 @@ const assessmentResultSchema = new Schema<AssessmentResultDocument>(
     student: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      required: true
+      required: true,
+      // One result per student; a double submit cannot save two.
+      unique: true
     },
     domainScores: {
       verbal: { type: Number, required: true },

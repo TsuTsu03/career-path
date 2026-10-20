@@ -1,23 +1,51 @@
 // server/src/controllers/queryController.ts
-import type { Request, Response } from "express";
-import { Types } from "mongoose";
+import type { Response } from "express";
+import { Types, isValidObjectId } from "mongoose";
 import Query, { type IQuery } from "../models/Query.js";
 import type { AuthRequest } from "../middleware/auth.js";
+import { sendQueryAnsweredEmail } from "../utils/mailer.js";
 
-// Shape expected by the frontend StudentQueries.tsx
+const MAX_LENGTH = { subject: 200, message: 5000, response: 5000 };
+const MAX_RESULTS = 500;
+
+interface PopulatedPerson {
+  _id: Types.ObjectId;
+  fullName?: string;
+  studentId?: string | null;
+  email?: string;
+}
+
+function asPerson(value: unknown): PopulatedPerson | null {
+  return value && typeof value === "object" && "fullName" in value
+    ? (value as PopulatedPerson)
+    : null;
+}
+
+// Shape expected by StudentQueries.tsx and AdminQueryManagement.tsx
 function mapQueryToDto(q: IQuery) {
+  const student = asPerson(q.student);
+  const counselor = asPerson(q.counselor);
+
   return {
-    id: q.id, // from toJSON transform
+    id: String(q._id),
     subject: q.subject,
     message: q.message,
     status: q.status,
     date: q.createdAt.toISOString(),
     response: q.response,
     responseDate: q.responseDate ? q.responseDate.toISOString() : undefined,
-    // For now simple label; later pwede mong i-populate actual admin name
-    counselor: q.counselor ? "School Admin" : undefined,
-    userId: q.student.toString()
+    counselor: q.counselor
+      ? (counselor?.fullName ?? "School Counselor")
+      : undefined,
+    userId: String(student?._id ?? q.student),
+    studentName: student?.fullName ?? "Unknown student",
+    studentId: student?.studentId ?? "",
+    studentEmail: student?.email ?? ""
   };
+}
+
+function cleanText(value: unknown, max: number): string {
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
 /**
@@ -26,22 +54,20 @@ function mapQueryToDto(q: IQuery) {
  */
 export const createQuery = async (req: AuthRequest, res: Response) => {
   try {
-    const { subject, message } = req.body as {
-      subject?: string;
-      message?: string;
-    };
+    if (!req.user || req.user.role !== "student") {
+      return res.status(403).json({
+        success: false,
+        message: "Only students can create queries."
+      });
+    }
+
+    const subject = cleanText(req.body?.subject, MAX_LENGTH.subject);
+    const message = cleanText(req.body?.message, MAX_LENGTH.message);
 
     if (!subject || !message) {
       return res.status(400).json({
         success: false,
         message: "Subject and message are required."
-      });
-    }
-
-    if (!req.user || req.user.role !== "student") {
-      return res.status(403).json({
-        success: false,
-        message: "Only students can create queries."
       });
     }
 
@@ -51,6 +77,7 @@ export const createQuery = async (req: AuthRequest, res: Response) => {
       message,
       status: "pending"
     });
+    await query.populate("student", "fullName studentId email");
 
     return res.status(201).json({
       success: true,
@@ -80,14 +107,19 @@ export const getQueries = async (req: AuthRequest, res: Response) => {
     }
 
     const { role, id } = req.user;
-
-    const filter: any = {};
+    const filter: { student?: Types.ObjectId } = {};
 
     if (role === "student") {
       filter.student = new Types.ObjectId(id);
     } else if (role === "admin") {
-      const userId = (req.query.userId as string) || "";
+      const userId =
+        typeof req.query.userId === "string" ? req.query.userId : "";
       if (userId) {
+        if (!isValidObjectId(userId)) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid student id." });
+        }
         filter.student = new Types.ObjectId(userId);
       }
       // else: admin sees all queries
@@ -98,7 +130,11 @@ export const getQueries = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const queries = await Query.find(filter).sort({ createdAt: -1 });
+    const queries = await Query.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(MAX_RESULTS)
+      .populate("student", "fullName studentId email")
+      .populate("counselor", "fullName");
 
     return res.json({
       success: true,
@@ -115,7 +151,7 @@ export const getQueries = async (req: AuthRequest, res: Response) => {
 
 /**
  * PATCH /queries/:id/reply
- * Admin answers a query
+ * Admin answers a query. The student gets an email about it.
  */
 export const answerQuery = async (req: AuthRequest, res: Response) => {
   try {
@@ -126,13 +162,20 @@ export const answerQuery = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const { id } = req.params;
-    const { response } = req.body as { response?: string };
+    const id = String(req.params.id ?? "");
+    const response = cleanText(req.body?.response, MAX_LENGTH.response);
 
     if (!response) {
       return res.status(400).json({
         success: false,
         message: "Response is required."
+      });
+    }
+
+    if (!isValidObjectId(id)) {
+      return res.status(404).json({
+        success: false,
+        message: "Query not found."
       });
     }
 
@@ -150,10 +193,29 @@ export const answerQuery = async (req: AuthRequest, res: Response) => {
     query.counselor = new Types.ObjectId(req.user.id);
 
     await query.save();
+    await query.populate([
+      { path: "student", select: "fullName studentId email" },
+      { path: "counselor", select: "fullName" }
+    ]);
+
+    const dto = mapQueryToDto(query);
+
+    // Best effort: the reply is saved even if the email fails. Awaited so a
+    // serverless function does not stop before the email goes out.
+    let emailSent = false;
+    if (dto.studentEmail) {
+      try {
+        await sendQueryAnsweredEmail(dto.studentEmail, dto.subject);
+        emailSent = true;
+      } catch (err) {
+        console.error("Error sending query answered email:", err);
+      }
+    }
 
     return res.json({
       success: true,
-      query: mapQueryToDto(query)
+      emailSent,
+      query: dto
     });
   } catch (err) {
     console.error("answerQuery error", err);

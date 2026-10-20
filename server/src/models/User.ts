@@ -16,6 +16,10 @@ export interface IUser extends Document {
   passwordSetupToken: string | undefined;
   passwordSetupTokenExpires: Date | undefined;
 
+  // Stored as a SHA-256 hash so a database leak does not expose live links.
+  passwordResetTokenHash: string | undefined;
+  passwordResetTokenExpires: Date | undefined;
+
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -70,6 +74,15 @@ const userSchema = new Schema<IUser>(
       default: undefined
     },
     passwordSetupTokenExpires: {
+      type: Date,
+      default: undefined
+    },
+
+    passwordResetTokenHash: {
+      type: String,
+      default: undefined
+    },
+    passwordResetTokenExpires: {
       type: Date,
       default: undefined
     }
