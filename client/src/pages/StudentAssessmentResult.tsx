@@ -1,6 +1,7 @@
 // client/src/pages/StudentAssessmentResult.tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { api } from "../lib/api";
 import type { AnswerReviewItem, AssessmentResult } from "./AssessmentResult";
 
 type LocationState = AssessmentResult | null;
@@ -16,8 +17,31 @@ export default function StudentAssessmentResult() {
   const location = useLocation();
   const [showReview, setShowReview] = useState(false);
 
-  // We treat location.state as the actual AssessmentResult object
-  const result = (location.state as LocationState) ?? null;
+  // Right after submitting, the result arrives as navigation state. Opened
+  // directly (bookmark, refresh), it is loaded from the server instead.
+  const stateResult = (location.state as LocationState) ?? null;
+  const [loaded, setLoaded] = useState<AssessmentResult | null>(null);
+  const [loading, setLoading] = useState(!stateResult);
+
+  useEffect(() => {
+    if (stateResult) return;
+    api<AssessmentResult>("/assessments/aptitude/latest")
+      .then(setLoaded)
+      .catch(() => setLoaded(null))
+      .finally(() => setLoading(false));
+  }, [stateResult]);
+
+  const result = stateResult ?? loaded;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-gray-600" role="status">
+          Loading your result…
+        </p>
+      </div>
+    );
+  }
 
   const handleRetake = () => {
     nav("/student/assessment", { replace: true });
@@ -84,9 +108,7 @@ export default function StudentAssessmentResult() {
                 </li>
                 <li className="flex items-start">
                   <span className="w-5 h-5 text-blue-600 mr-2 mt-0.5">✔</span>
-                  <span>
-                    Results are classified using a C4.5 decision tree
-                  </span>
+                  <span>Results are classified using a C4.5 decision tree</span>
                 </li>
               </ul>
             </div>
@@ -302,9 +324,9 @@ export default function StudentAssessmentResult() {
           </div>
           <p className="text-sm text-gray-600 mb-3">
             Your recommended SHS track was produced by a trained{" "}
-            <span className="font-medium">C4.5 decision tree</span>. Below is the
-            exact path the tree followed from its root node down to the final
-            decision (leaf):
+            <span className="font-medium">C4.5 decision tree</span>. Below is
+            the exact path the tree followed from its root node down to the
+            final decision (leaf):
           </p>
           <ol className="list-decimal pl-5 space-y-1 text-sm text-gray-700">
             {decisionPath.map((step, idx) => (

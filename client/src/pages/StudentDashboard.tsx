@@ -75,10 +75,15 @@ export default function StudentDashboard({
     let cancelled = false;
 
     const load = async () => {
+      // The progress card only shows on the home page; other pages only
+      // need the badge counts.
+      const needsProgress = view === "dashboard" || view === "recommendations";
       const [queries, announcements, latest] = await Promise.allSettled([
         api<{ queries: QueryItem[] }>("/queries"),
         api<{ announcements: AnnouncementItem[] }>("/announcements"),
-        api<unknown>("/assessments/aptitude/latest")
+        needsProgress
+          ? api<unknown>("/assessments/aptitude/latest")
+          : Promise.reject(new Error("skipped"))
       ]);
       if (cancelled) return;
 
@@ -92,11 +97,13 @@ export default function StudentDashboard({
           ? announcements.value.announcements.map((a) => a.id)
           : []
       );
-      setProgress({
-        assessmentDone: latest.status === "fulfilled",
+      setProgress((prev) => ({
+        assessmentDone: needsProgress
+          ? latest.status === "fulfilled"
+          : (prev?.assessmentDone ?? false),
         reviewed: localStorage.getItem(reviewedKey) === "1",
         askedCounselor: queryList.length > 0
-      });
+      }));
     };
 
     void load();

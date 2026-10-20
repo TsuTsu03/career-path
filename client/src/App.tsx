@@ -1,8 +1,15 @@
-import { Suspense, lazy, useEffect } from "react";
-import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
+import { Suspense, lazy, useEffect, useReducer } from "react";
+import {
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+  useLocation
+} from "react-router-dom";
 import ProtectedRoute from "./routes/ProtectedRoute";
 import {
   SESSION_EXPIRED_EVENT,
+  SESSION_UPDATED_EVENT,
   clearSession,
   getSessionUser
 } from "./lib/session";
@@ -46,6 +53,12 @@ function viewFromPath<V extends string>(
 function RoleBasedDashboard() {
   const nav = useNavigate();
   const { pathname } = useLocation();
+  // Re-read the session when account details change (e.g. a new name).
+  const [, refresh] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    window.addEventListener(SESSION_UPDATED_EVENT, refresh);
+    return () => window.removeEventListener(SESSION_UPDATED_EVENT, refresh);
+  }, []);
   const session = getSessionUser();
 
   const handleLogout = () => {
@@ -70,7 +83,15 @@ function RoleBasedDashboard() {
     if (pathname.startsWith("/student/")) {
       return <Navigate to={ADMIN_VIEW_PATHS.dashboard} replace />;
     }
-    const view = viewFromPath<AdminView>(ADMIN_VIEW_PATHS, pathname, "dashboard");
+    // Admins manage announcements on their own page.
+    if (pathname.startsWith(STUDENT_VIEW_PATHS.announcements)) {
+      return <Navigate to={ADMIN_VIEW_PATHS.announcements} replace />;
+    }
+    const view = viewFromPath<AdminView>(
+      ADMIN_VIEW_PATHS,
+      pathname,
+      "dashboard"
+    );
     return <AdminDashboard user={user} onLogout={handleLogout} view={view} />;
   }
 

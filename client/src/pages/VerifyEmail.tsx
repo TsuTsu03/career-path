@@ -66,8 +66,6 @@ export default function VerifyEmail() {
           navigate("/login");
         }, 3000);
       } catch (err) {
-        console.error(err);
-
         if (err instanceof ApiError) {
           setStatus("error");
           setMessage(err.message || "Verification failed.");

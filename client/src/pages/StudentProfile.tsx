@@ -69,30 +69,33 @@ export default function StudentProfile({ user }: StudentProfileProps) {
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
 
-  const mergeProfileFromApi = useCallback((payload: ApiProfileResponse | null): void => {
-    if (!payload) return;
+  const mergeProfileFromApi = useCallback(
+    (payload: ApiProfileResponse | null): void => {
+      if (!payload) return;
 
-    const raw = (payload.data ?? {}) as ApiProfileResponse["data"];
+      const raw = (payload.data ?? {}) as ApiProfileResponse["data"];
 
-    setProfile((prev) => ({
-      ...prev,
-      firstName: raw?.firstName ?? "",
-      lastName: raw?.lastName ?? "",
-      email: raw?.email ?? user.email,
-      studentId: raw?.studentId ?? "",
-      grade: raw?.gradeLevel ?? raw?.grade ?? "",
-      section: raw?.section ?? "",
-      gender: raw?.gender ?? "",
-      birthDate: raw?.birthDate ? String(raw.birthDate).slice(0, 10) : "",
-      contactNumber: raw?.contactNumber ?? "",
-      address: raw?.address ?? "",
-      guardianName: raw?.guardianName ?? "",
-      guardianContact: raw?.guardianContact ?? "",
-      interests: raw?.interests ?? "",
-      strengths: raw?.strengths ?? "",
-      hobbies: raw?.hobbies ?? ""
-    }));
-  }, [user.email]);
+      setProfile((prev) => ({
+        ...prev,
+        firstName: raw?.firstName ?? "",
+        lastName: raw?.lastName ?? "",
+        email: raw?.email ?? user.email,
+        studentId: raw?.studentId ?? "",
+        grade: raw?.gradeLevel ?? raw?.grade ?? "",
+        section: raw?.section ?? "",
+        gender: raw?.gender ?? "",
+        birthDate: raw?.birthDate ? String(raw.birthDate).slice(0, 10) : "",
+        contactNumber: raw?.contactNumber ?? "",
+        address: raw?.address ?? "",
+        guardianName: raw?.guardianName ?? "",
+        guardianContact: raw?.guardianContact ?? "",
+        interests: raw?.interests ?? "",
+        strengths: raw?.strengths ?? "",
+        hobbies: raw?.hobbies ?? ""
+      }));
+    },
+    [user.email]
+  );
 
   useEffect(() => {
     const fetchProfile = async (): Promise<void> => {
@@ -116,7 +119,9 @@ export default function StudentProfile({ user }: StudentProfileProps) {
           setIsNewProfile(true);
           setIsEditing(true);
           try {
-            const me = await api<{ user: { studentId: string | null } }>("/auth/me");
+            const me = await api<{ user: { studentId: string | null } }>(
+              "/auth/me"
+            );
             setProfile((prev) => ({
               ...prev,
               email: user.email,
@@ -263,8 +268,14 @@ export default function StudentProfile({ user }: StudentProfileProps) {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label htmlFor="profile-firstName" className="block text-gray-700 mb-2">First Name</label>
-                <input id="profile-firstName"
+                <label
+                  htmlFor="profile-firstName"
+                  className="block text-gray-700 mb-2"
+                >
+                  First Name
+                </label>
+                <input
+                  id="profile-firstName"
                   type="text"
                   value={profile.firstName}
                   onChange={(e) => handleChange("firstName", e.target.value)}
@@ -273,8 +284,14 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div>
-                <label htmlFor="profile-lastName" className="block text-gray-700 mb-2">Last Name</label>
-                <input id="profile-lastName"
+                <label
+                  htmlFor="profile-lastName"
+                  className="block text-gray-700 mb-2"
+                >
+                  Last Name
+                </label>
+                <input
+                  id="profile-lastName"
                   type="text"
                   value={profile.lastName}
                   onChange={(e) => handleChange("lastName", e.target.value)}
@@ -283,8 +300,14 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div>
-                <label htmlFor="profile-gender" className="block text-gray-700 mb-2">Gender</label>
-                <select id="profile-gender"
+                <label
+                  htmlFor="profile-gender"
+                  className="block text-gray-700 mb-2"
+                >
+                  Gender
+                </label>
+                <select
+                  id="profile-gender"
                   value={profile.gender}
                   onChange={(e) => handleChange("gender", e.target.value)}
                   disabled={!isEditing}
@@ -297,12 +320,61 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 </select>
               </div>
               <div>
-                <label htmlFor="profile-birthDate" className="block text-gray-700 mb-2">Birth Date</label>
-                <input id="profile-birthDate"
+                <label
+                  htmlFor="profile-birthDate"
+                  className="block text-gray-700 mb-2"
+                >
+                  Birth Date
+                </label>
+                <input
+                  id="profile-birthDate"
                   type="date"
                   value={profile.birthDate}
                   onChange={(e) => handleChange("birthDate", e.target.value)}
                   disabled={!isEditing}
+                  max={new Date().toISOString().slice(0, 10)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none disabled:bg-gray-50"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="profile-grade"
+                  className="block text-gray-700 mb-2"
+                >
+                  Grade Level
+                </label>
+                <select
+                  id="profile-grade"
+                  value={profile.grade}
+                  onChange={(e) => handleChange("grade", e.target.value)}
+                  disabled={!isEditing}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none disabled:bg-gray-50"
+                >
+                  <option value="">Select grade level</option>
+                  {profile.grade &&
+                    !["Grade 9", "Grade 10", "Grade 11", "Grade 12"].includes(
+                      profile.grade
+                    ) && <option>{profile.grade}</option>}
+                  <option>Grade 9</option>
+                  <option>Grade 10</option>
+                  <option>Grade 11</option>
+                  <option>Grade 12</option>
+                </select>
+              </div>
+              <div>
+                <label
+                  htmlFor="profile-section"
+                  className="block text-gray-700 mb-2"
+                >
+                  Section
+                </label>
+                <input
+                  id="profile-section"
+                  type="text"
+                  value={profile.section}
+                  onChange={(e) => handleChange("section", e.target.value)}
+                  disabled={!isEditing}
+                  maxLength={40}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none disabled:bg-gray-50"
                 />
               </div>
@@ -315,10 +387,14 @@ export default function StudentProfile({ user }: StudentProfileProps) {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label htmlFor="profile-email" className="block text-gray-700 mb-2">
+                <label
+                  htmlFor="profile-email"
+                  className="block text-gray-700 mb-2"
+                >
                   Email Address
                 </label>
-                <input id="profile-email"
+                <input
+                  id="profile-email"
                   type="email"
                   value={profile.email}
                   disabled
@@ -326,10 +402,14 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div>
-                <label htmlFor="profile-contactNumber" className="block text-gray-700 mb-2">
+                <label
+                  htmlFor="profile-contactNumber"
+                  className="block text-gray-700 mb-2"
+                >
                   Contact Number
                 </label>
-                <input id="profile-contactNumber"
+                <input
+                  id="profile-contactNumber"
                   type="tel"
                   value={profile.contactNumber}
                   onChange={(e) =>
@@ -340,8 +420,14 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div className="md:col-span-2">
-                <label htmlFor="profile-address" className="block text-gray-700 mb-2">Address</label>
-                <textarea id="profile-address"
+                <label
+                  htmlFor="profile-address"
+                  className="block text-gray-700 mb-2"
+                >
+                  Address
+                </label>
+                <textarea
+                  id="profile-address"
                   value={profile.address}
                   onChange={(e) => handleChange("address", e.target.value)}
                   disabled={!isEditing}
@@ -358,10 +444,14 @@ export default function StudentProfile({ user }: StudentProfileProps) {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label htmlFor="profile-guardianName" className="block text-gray-700 mb-2">
+                <label
+                  htmlFor="profile-guardianName"
+                  className="block text-gray-700 mb-2"
+                >
                   Guardian Name
                 </label>
-                <input id="profile-guardianName"
+                <input
+                  id="profile-guardianName"
                   type="text"
                   value={profile.guardianName}
                   onChange={(e) => handleChange("guardianName", e.target.value)}
@@ -370,10 +460,14 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div>
-                <label htmlFor="profile-guardianContact" className="block text-gray-700 mb-2">
+                <label
+                  htmlFor="profile-guardianContact"
+                  className="block text-gray-700 mb-2"
+                >
                   Guardian Contact
                 </label>
-                <input id="profile-guardianContact"
+                <input
+                  id="profile-guardianContact"
                   type="tel"
                   value={profile.guardianContact}
                   onChange={(e) =>
@@ -392,10 +486,14 @@ export default function StudentProfile({ user }: StudentProfileProps) {
             </h3>
             <div className="space-y-6">
               <div>
-                <label htmlFor="profile-interests" className="block text-gray-700 mb-2">
+                <label
+                  htmlFor="profile-interests"
+                  className="block text-gray-700 mb-2"
+                >
                   Interests & Passions
                 </label>
-                <textarea id="profile-interests"
+                <textarea
+                  id="profile-interests"
                   value={profile.interests}
                   onChange={(e) => handleChange("interests", e.target.value)}
                   disabled={!isEditing}
@@ -404,8 +502,14 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div>
-                <label htmlFor="profile-strengths" className="block text-gray-700 mb-2">Strengths</label>
-                <textarea id="profile-strengths"
+                <label
+                  htmlFor="profile-strengths"
+                  className="block text-gray-700 mb-2"
+                >
+                  Strengths
+                </label>
+                <textarea
+                  id="profile-strengths"
                   value={profile.strengths}
                   onChange={(e) => handleChange("strengths", e.target.value)}
                   disabled={!isEditing}
@@ -414,10 +518,14 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div>
-                <label htmlFor="profile-hobbies" className="block text-gray-700 mb-2">
+                <label
+                  htmlFor="profile-hobbies"
+                  className="block text-gray-700 mb-2"
+                >
                   Hobbies & Activities
                 </label>
-                <textarea id="profile-hobbies"
+                <textarea
+                  id="profile-hobbies"
                   value={profile.hobbies}
                   onChange={(e) => handleChange("hobbies", e.target.value)}
                   disabled={!isEditing}

@@ -28,6 +28,7 @@ const SESSION_KEYS = [
 const LEGACY_TOKEN_KEYS = ["token", "accessToken", "authToken"];
 
 export const SESSION_EXPIRED_EVENT = "carpath:session-expired";
+export const SESSION_UPDATED_EVENT = "carpath:session-updated";
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -63,4 +64,5 @@ export function getSessionUser(): SessionUser | null {
 
 export function updateStoredName(fullName: string): void {
   localStorage.setItem("fullName", fullName);
+  window.dispatchEvent(new Event(SESSION_UPDATED_EVENT));
 }

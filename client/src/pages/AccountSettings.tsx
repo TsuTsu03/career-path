@@ -50,11 +50,16 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
     <div className="max-w-4xl mx-auto">
       <div className="mb-6">
         <h2 className="text-gray-900 mb-2">Account Settings</h2>
-        <p className="text-gray-600">Manage your account details and password</p>
+        <p className="text-gray-600">
+          Manage your account details and password
+        </p>
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="border-b border-gray-200 flex overflow-x-auto" role="tablist">
+        <div
+          className="border-b border-gray-200 flex overflow-x-auto"
+          role="tablist"
+        >
           {tabs.map((tab) => (
             <button
               key={tab.key}
@@ -76,7 +81,9 @@ export default function AccountSettings({ user }: AccountSettingsProps) {
         <div className="p-6">
           {activeTab === "account" && <AccountTab user={user} />}
           {activeTab === "password" && <PasswordTab />}
-          {activeTab === "admins" && isAdmin && <AdminsTab currentUserId={user.id} />}
+          {activeTab === "admins" && isAdmin && (
+            <AdminsTab currentUserId={user.id} />
+          )}
         </div>
       </div>
     </div>
@@ -206,7 +213,10 @@ function PasswordTab() {
   return (
     <form onSubmit={submit} className="space-y-6 max-w-xl">
       {error && (
-        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
           {error}
         </p>
       )}
@@ -219,7 +229,9 @@ function PasswordTab() {
           autoComplete="current-password"
           required
           value={form.currentPassword}
-          onChange={(e) => setForm({ ...form, currentPassword: e.target.value })}
+          onChange={(e) =>
+            setForm({ ...form, currentPassword: e.target.value })
+          }
           className={inputClass}
         />
       </div>
@@ -250,7 +262,9 @@ function PasswordTab() {
           autoComplete="new-password"
           required
           value={form.confirmPassword}
-          onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+          onChange={(e) =>
+            setForm({ ...form, confirmPassword: e.target.value })
+          }
           className={inputClass}
         />
       </div>
@@ -290,15 +304,18 @@ function AdminsTab({ currentUserId }: { currentUserId: string }) {
     e.preventDefault();
     setAdding(true);
     try {
-      const out = await api<{ message: string }>("/auth/admin/create", {
-        method: "POST",
-        body: JSON.stringify({
-          fullName: newAdmin.fullName.trim(),
-          email: newAdmin.email.trim().toLowerCase()
-        })
-      });
+      const out = await api<{ message: string; emailSent: boolean }>(
+        "/auth/admin/create",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            fullName: newAdmin.fullName.trim(),
+            email: newAdmin.email.trim().toLowerCase()
+          })
+        }
+      );
       setNewAdmin({ fullName: "", email: "" });
-      toast(out.message);
+      toast(out.message, out.emailSent ? "success" : "info");
       await load();
     } catch (err) {
       toast(errorMessage(err, "Failed to create admin."), "error");
@@ -329,7 +346,10 @@ function AdminsTab({ currentUserId }: { currentUserId: string }) {
         {admins && (
           <ul className="divide-y divide-gray-200 border border-gray-200 rounded-lg">
             {admins.map((a) => (
-              <li key={a.id} className="p-4 flex flex-wrap items-center justify-between gap-3">
+              <li
+                key={a.id}
+                className="p-4 flex flex-wrap items-center justify-between gap-3"
+              >
                 <div className="min-w-0">
                   <p className="text-gray-900">
                     {a.fullName}
@@ -342,7 +362,9 @@ function AdminsTab({ currentUserId }: { currentUserId: string }) {
                 {a.pendingSetup ? (
                   <div className="flex items-center gap-3">
                     <span className="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800">
-                      {a.setupLinkExpired ? "Setup link expired" : "Waiting for setup"}
+                      {a.setupLinkExpired
+                        ? "Setup link expired"
+                        : "Waiting for setup"}
                     </span>
                     <button
                       type="button"
@@ -380,7 +402,9 @@ function AdminsTab({ currentUserId }: { currentUserId: string }) {
             id="admin-name"
             required
             value={newAdmin.fullName}
-            onChange={(e) => setNewAdmin({ ...newAdmin, fullName: e.target.value })}
+            onChange={(e) =>
+              setNewAdmin({ ...newAdmin, fullName: e.target.value })
+            }
             className={inputClass}
           />
         </div>
@@ -393,7 +417,9 @@ function AdminsTab({ currentUserId }: { currentUserId: string }) {
             type="email"
             required
             value={newAdmin.email}
-            onChange={(e) => setNewAdmin({ ...newAdmin, email: e.target.value })}
+            onChange={(e) =>
+              setNewAdmin({ ...newAdmin, email: e.target.value })
+            }
             className={inputClass}
           />
         </div>

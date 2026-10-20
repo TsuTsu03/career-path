@@ -220,7 +220,16 @@ export async function resendAdminSetup(req: AuthRequest, res: Response) {
     admin.passwordSetupTokenExpires = new Date(Date.now() + ONE_DAY_MS);
     await admin.save();
 
-    await sendAdminSetupEmail(admin.email, token, String(admin._id));
+    try {
+      await sendAdminSetupEmail(admin.email, token, String(admin._id));
+    } catch (emailErr) {
+      console.error("resendAdminSetup email error:", emailErr);
+      return res.status(502).json({
+        success: false,
+        message:
+          "A new link was created, but the email could not be sent. Check the email settings and try again."
+      });
+    }
 
     return res.json({ success: true, message: "Setup link sent." });
   } catch (error) {
