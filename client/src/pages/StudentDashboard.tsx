@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AccountSettings from "./AccountSettings";
 import Announcements from "./Announcements";
@@ -6,6 +6,10 @@ import StudentProfile from "./StudentProfile";
 import Assessment from "./Assessment";
 import StudentQueries from "./StudentQueries";
 import TrackRecommendations from "./TrackRecommendations";
+import DashboardLayout, { type NavItem } from "../components/DashboardLayout";
+import Icon from "../components/Icon";
+import { api } from "../lib/api";
+import { STUDENT_VIEW_PATHS, type StudentView } from "../lib/routes";
 
 interface StudentDashboardProps {
   user: {
@@ -15,77 +19,151 @@ interface StudentDashboardProps {
     email: string;
   };
   onLogout: () => void;
-  initialView?: StudentView;
+  view: StudentView;
 }
 
-type StudentView =
-  | "dashboard"
-  | "profile"
-  | "assessment"
-  | "recommendations"
-  | "queries"
-  | "settings"
-  | "announcements";
+interface QueryItem {
+  id: string;
+  status: "pending" | "answered";
+}
+
+interface AnnouncementItem {
+  id: string;
+  date: string;
+}
+
+// Remembers, per student and per browser, what they have already seen.
+function readSeen(key: string): string[] {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSeen(key: string, ids: string[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify(ids));
+  } catch {
+    // storage full or blocked: badges just reappear next time
+  }
+}
+
+interface ProgressState {
+  assessmentDone: boolean;
+  reviewed: boolean;
+  askedCounselor: boolean;
+}
 
 export default function StudentDashboard({
   user,
   onLogout,
-  initialView = "dashboard"
+  view
 }: StudentDashboardProps) {
   const navigate = useNavigate();
+  const [answeredIds, setAnsweredIds] = useState<string[]>([]);
+  const [announcementIds, setAnnouncementIds] = useState<string[]>([]);
+  const [progress, setProgress] = useState<ProgressState | null>(null);
 
-  const [activeView, setActiveView] = useState<StudentView>(initialView);
-  const [assessmentCompleted, setAssessmentCompleted] = useState(
-    initialView === "recommendations"
-  );
+  const seenAnswersKey = `seenAnswers:${user.id}`;
+  const seenAnnouncementsKey = `seenAnnouncements:${user.id}`;
+  const reviewedKey = `reviewedRecommendations:${user.id}`;
 
-  const handleNavigation = (view: StudentView) => {
-    setActiveView(view);
+  // Load what the badges and progress card need.
+  useEffect(() => {
+    let cancelled = false;
 
-    switch (view) {
-      case "dashboard":
-        navigate("/student/dashboard");
-        break;
-      case "profile":
-        navigate("/student/profile");
-        break;
-      case "assessment":
-        navigate("/student/assessment");
-        break;
-      case "recommendations":
-        navigate("/student/tracks");
-        break;
-      case "queries":
-        navigate("/student/queries");
-        break;
-      case "settings":
-        navigate("/account-settings");
-        break;
-      case "announcements":
-        navigate("/announcements");
-        break;
-      default:
-        navigate("/student/dashboard");
+    const load = async () => {
+      const [queries, announcements, latest] = await Promise.allSettled([
+        api<{ queries: QueryItem[] }>("/queries"),
+        api<{ announcements: AnnouncementItem[] }>("/announcements"),
+        api<unknown>("/assessments/aptitude/latest")
+      ]);
+      if (cancelled) return;
+
+      const queryList =
+        queries.status === "fulfilled" ? queries.value.queries : [];
+      setAnsweredIds(
+        queryList.filter((q) => q.status === "answered").map((q) => q.id)
+      );
+      setAnnouncementIds(
+        announcements.status === "fulfilled"
+          ? announcements.value.announcements.map((a) => a.id)
+          : []
+      );
+      setProgress({
+        assessmentDone: latest.status === "fulfilled",
+        reviewed: localStorage.getItem(reviewedKey) === "1",
+        askedCounselor: queryList.length > 0
+      });
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [view, reviewedKey]);
+
+  // Opening a page marks its items as seen.
+  useEffect(() => {
+    if (view === "queries" && answeredIds.length) {
+      writeSeen(seenAnswersKey, answeredIds);
     }
+    if (view === "announcements" && announcementIds.length) {
+      writeSeen(seenAnnouncementsKey, announcementIds);
+    }
+    if (view === "recommendations" && progress?.assessmentDone) {
+      localStorage.setItem(reviewedKey, "1");
+    }
+  }, [
+    view,
+    answeredIds,
+    announcementIds,
+    progress?.assessmentDone,
+    seenAnswersKey,
+    seenAnnouncementsKey,
+    reviewedKey
+  ]);
+
+  const newAnswers =
+    view === "queries"
+      ? 0
+      : answeredIds.filter((id) => !readSeen(seenAnswersKey).includes(id))
+          .length;
+  const newAnnouncements =
+    view === "announcements"
+      ? 0
+      : announcementIds.filter(
+          (id) => !readSeen(seenAnnouncementsKey).includes(id)
+        ).length;
+
+  const handleNavigation = (next: StudentView) => {
+    navigate(STUDENT_VIEW_PATHS[next]);
   };
 
-  // Optional: kung gusto mong i-toggle yung “Completed” step sa progress
-  const handleAssessmentComplete = () => {
-    setAssessmentCompleted(true);
-    // current flow mo: redirect to /student/assessment/result
-    navigate("/student/assessment/result");
-  };
+  const navItems: NavItem<StudentView>[] = [
+    { view: "dashboard", label: "Dashboard", icon: "home" },
+    { view: "profile", label: "My Profile", icon: "user" },
+    { view: "assessment", label: "Track Assessment", icon: "clipboard" },
+    { view: "recommendations", label: "SHS Recommendations", icon: "trend" },
+    {
+      view: "announcements",
+      label: "Announcements",
+      icon: "megaphone",
+      badge: newAnnouncements
+    },
+    { view: "queries", label: "My Queries", icon: "chat", badge: newAnswers },
+    { view: "settings", label: "Settings", icon: "settings" }
+  ];
 
   const renderContent = () => {
-    switch (activeView) {
+    switch (view) {
       case "profile":
         return <StudentProfile user={user} />;
       case "assessment":
-        // depende sa implementation mo ng Assessment:
-        // kung may onComplete prop, pass it; kung wala, alisin yung prop na 'yan
-        return <Assessment onComplete={handleAssessmentComplete} />;
+        return <Assessment />;
       case "recommendations":
-        // ❗ WALA NANG PROP – TrackRecommendations na ang bahala mag-fetch sa backend
         return <TrackRecommendations />;
       case "queries":
         return <StudentQueries userId={user.id} />;
@@ -96,392 +174,157 @@ export default function StudentDashboard({
       default:
         return (
           <DashboardHome
+            name={user.name}
             onNavigate={handleNavigation}
-            assessmentCompleted={assessmentCompleted}
+            progress={progress}
+            newAnswers={newAnswers}
           />
         );
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="rounded-lg">
-                <img
-                  src="/assets/LOGO.jpg"
-                  alt="Logo"
-                  className="w-8 h-8 object-contain"
-                />
-              </div>
-              <div>
-                <h1 className="text-gray-900">CAREER PATH</h1>
-                <p className="text-gray-600">Student Portal</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-gray-700">{user.name}</span>
-              <button
-                onClick={onLogout}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="flex">
-        {/* Sidebar */}
-        <aside className="w-64 bg-white min-h-screen shadow-sm">
-          <nav className="p-4 space-y-2">
-            <button
-              onClick={() => handleNavigation("dashboard")}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeView === "dashboard"
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                />
-              </svg>
-              <span>Dashboard</span>
-            </button>
-
-            <button
-              onClick={() => handleNavigation("profile")}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeView === "profile"
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                />
-              </svg>
-              <span>My Profile</span>
-            </button>
-
-            <button
-              onClick={() => handleNavigation("assessment")}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeView === "assessment"
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                />
-              </svg>
-              <span>Track Assessment</span>
-            </button>
-
-            <button
-              onClick={() => handleNavigation("recommendations")}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeView === "recommendations"
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-                />
-              </svg>
-              <span>SHS Recommendations</span>
-            </button>
-
-            <button
-              onClick={() => handleNavigation("announcements")}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeView === "announcements"
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"
-                />
-              </svg>
-              <span>Announcements</span>
-            </button>
-
-            <button
-              onClick={() => handleNavigation("queries")}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeView === "queries"
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                />
-              </svg>
-              <span>My Queries</span>
-            </button>
-
-            <button
-              onClick={() => handleNavigation("settings")}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                activeView === "settings"
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-              </svg>
-              <span>Settings</span>
-            </button>
-          </nav>
-        </aside>
-
-        {/* Main Content */}
-        <main className="flex-1 p-8">{renderContent()}</main>
-      </div>
-    </div>
+    <DashboardLayout
+      portalLabel="Student Portal"
+      accent="blue"
+      userName={user.name}
+      onLogout={onLogout}
+      navItems={navItems}
+      activeView={view}
+      onNavigate={handleNavigation}
+    >
+      {renderContent()}
+    </DashboardLayout>
   );
 }
 
 interface DashboardHomeProps {
+  name: string;
   onNavigate: (view: StudentView) => void;
-  assessmentCompleted: boolean;
+  progress: ProgressState | null;
+  newAnswers: number;
 }
 
 function DashboardHome({
+  name,
   onNavigate,
-  assessmentCompleted
+  progress,
+  newAnswers
 }: DashboardHomeProps) {
+  const firstName = name.split(" ")[0] || name;
+
+  const actions: {
+    view: StudentView;
+    title: string;
+    text: string;
+    icon: "clipboard" | "trend" | "chat";
+    color: string;
+  }[] = [
+    {
+      view: "assessment",
+      title: progress?.assessmentDone ? "Assessment Done" : "Take Assessment",
+      text: progress?.assessmentDone
+        ? "Review your answers and result"
+        : "Discover your best-fit strand",
+      icon: "clipboard",
+      color: "bg-blue-100 text-blue-600"
+    },
+    {
+      view: "recommendations",
+      title: "View Results",
+      text: "See your strand recommendations",
+      icon: "trend",
+      color: "bg-green-100 text-green-600"
+    },
+    {
+      view: "queries",
+      title: "Ask Questions",
+      text:
+        newAnswers > 0
+          ? `${newAnswers} new ${newAnswers === 1 ? "answer" : "answers"} from your counselor`
+          : "Get guidance from counselors",
+      icon: "chat",
+      color: "bg-purple-100 text-purple-600"
+    }
+  ];
+
+  const steps = [
+    {
+      label: "Complete Career Assessment",
+      done: progress?.assessmentDone ?? false,
+      view: "assessment" as StudentView
+    },
+    {
+      label: "Review Track Recommendations",
+      done: progress?.reviewed ?? false,
+      view: "recommendations" as StudentView
+    },
+    {
+      label: "Consult with Counselor",
+      done: progress?.askedCounselor ?? false,
+      view: "queries" as StudentView
+    }
+  ];
+
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-gray-900 mb-2">Welcome to CAREER PATH</h2>
+        <h2 className="text-gray-900 mb-2">Welcome, {firstName}</h2>
         <p className="text-gray-600">
           Your personalized career path guidance system
         </p>
       </div>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div
-          className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => onNavigate("assessment")}
-        >
-          <div className="flex items-center space-x-4">
-            <div className="bg-blue-100 text-blue-600 rounded-lg p-3">
-              <svg
-                className="w-8 h-8"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                />
-              </svg>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+        {actions.map((a) => (
+          <button
+            key={a.view}
+            type="button"
+            onClick={() => onNavigate(a.view)}
+            className="text-left bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
+            <div className="flex items-center gap-4">
+              <div className={`${a.color} rounded-lg p-3`}>
+                <Icon name={a.icon} className="w-8 h-8" />
+              </div>
+              <div>
+                <h3 className="text-gray-900">{a.title}</h3>
+                <p className="text-gray-600">{a.text}</p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-gray-900">Take Assessment</h3>
-              <p className="text-gray-600">Discover your career path</p>
-            </div>
-          </div>
-        </div>
-
-        <div
-          className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => onNavigate("recommendations")}
-        >
-          <div className="flex items-center space-x-4">
-            <div className="bg-green-100 text-green-600 rounded-lg p-3">
-              <svg
-                className="w-8 h-8"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-                />
-              </svg>
-            </div>
-            <div>
-              <h3 className="text-gray-900">View Results</h3>
-              <p className="text-gray-600">See your recommendations</p>
-            </div>
-          </div>
-        </div>
-
-        <div
-          className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => onNavigate("queries")}
-        >
-          <div className="flex items-center space-x-4">
-            <div className="bg-purple-100 text-purple-600 rounded-lg p-3">
-              <svg
-                className="w-8 h-8"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                />
-              </svg>
-            </div>
-            <div>
-              <h3 className="text-gray-900">Ask Questions</h3>
-              <p className="text-gray-600">Get guidance from counselors</p>
-            </div>
-          </div>
-        </div>
+          </button>
+        ))}
       </div>
 
-      {/* Status Card */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <h3 className="text-gray-900 mb-4">Your Progress</h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                  assessmentCompleted
-                    ? "bg-green-100 text-green-600"
-                    : "bg-gray-100 text-gray-400"
-                }`}
-              >
-                {assessmentCompleted ? (
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+        {progress === null ? (
+          <p className="text-gray-500">Loading your progress…</p>
+        ) : (
+          <ol className="space-y-4">
+            {steps.map((step, idx) => (
+              <li key={step.label} className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => onNavigate(step.view)}
+                  className="flex items-center gap-3 text-left hover:underline"
+                >
+                  <span
+                    className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                      step.done
+                        ? "bg-green-100 text-green-600"
+                        : "bg-gray-100 text-gray-500"
+                    }`}
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                ) : (
-                  <span>1</span>
-                )}
-              </div>
-              <span className="text-gray-700">Complete Career Assessment</span>
-            </div>
-            {assessmentCompleted && (
-              <span className="text-green-600">Completed</span>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 text-gray-400">
-                <span>2</span>
-              </div>
-              <span className="text-gray-700">
-                Review Track Recommendations
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 text-gray-400">
-                <span>3</span>
-              </div>
-              <span className="text-gray-700">Consult with Counselor</span>
-            </div>
-          </div>
-        </div>
+                    {step.done ? <Icon name="check" /> : idx + 1}
+                  </span>
+                  <span className="text-gray-700">{step.label}</span>
+                </button>
+                {step.done && <span className="text-green-600">Completed</span>}
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
     </div>
   );

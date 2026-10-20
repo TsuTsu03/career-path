@@ -1,21 +1,8 @@
 // client/src/pages/StudentQueries.tsx
 
 import { useEffect, useState, type JSX } from "react";
-
-const API_BASE_URL =
-  (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env
-    ?.VITE_API_URL ?? "http://localhost:9007";
-
-function getStoredToken(): string | null {
-  const keys = ["access", "token", "accessToken", "authToken"];
-  for (const key of keys) {
-    const local = localStorage.getItem(key);
-    if (local) return local;
-    const session = sessionStorage.getItem(key);
-    if (session) return session;
-  }
-  return null;
-}
+import { api, errorMessage } from "../lib/api";
+import { getToken } from "../lib/session";
 
 interface StudentQueriesProps {
   userId: string;
@@ -33,26 +20,19 @@ interface Query {
   userId: string;
 }
 
-/**
- * Expected shape ng backend.
- * I-align mo to sa actual fields ng DB mo later.
- */
+/** Query as returned by GET/POST /queries */
 interface BackendQuery {
   id: string;
   subject: string;
   message: string;
   status: "pending" | "answered";
   userId: string;
-
-  createdAt?: string;
-  answeredAt?: string;
-  updatedAt?: string;
-
+  date: string;
   response?: string;
-  counselorName?: string;
+  responseDate?: string;
+  counselor?: string;
 }
 
-/** Map backend → front-end Query */
 function mapBackendQuery(q: BackendQuery): Query {
   return {
     id: q.id,
@@ -60,10 +40,10 @@ function mapBackendQuery(q: BackendQuery): Query {
     message: q.message,
     status: q.status,
     userId: q.userId,
-    date: q.createdAt ?? new Date().toISOString(),
+    date: q.date,
     response: q.response,
-    responseDate: q.answeredAt ?? q.updatedAt,
-    counselor: q.counselorName
+    responseDate: q.responseDate,
+    counselor: q.counselor
   };
 }
 
@@ -79,58 +59,23 @@ export default function StudentQueries({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /* ========== GET /api/queries?userId=... ========== */
+  /* ========== GET /queries (own queries only) ========== */
   useEffect(() => {
     const fetchQueries = async (): Promise<void> => {
       setLoading(true);
       setError(null);
 
-      const token = getStoredToken();
-      if (!token) {
+      if (!getToken()) {
         setError("No session found. Please log in again to view your queries.");
         setLoading(false);
         return;
       }
 
       try {
-        const headers: HeadersInit = {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        };
-
-        const url = `${API_BASE_URL}/queries?userId=${encodeURIComponent(
-          userId
-        )}`;
-
-        const res = await fetch(url, { method: "GET", headers });
-
-        if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as {
-            message?: string;
-          };
-          throw new Error(
-            body.message ??
-              `Failed to load queries from server (status ${res.status}).`
-          );
-        }
-
-        const body = (await res.json()) as {
-          success: boolean;
-          queries: BackendQuery[];
-        };
-
-        if (!body.success) {
-          throw new Error(
-            "Server returned success = false when loading queries."
-          );
-        }
-
-        const mapped = body.queries.map(mapBackendQuery);
-        setQueries(mapped);
+        const body = await api<{ queries: BackendQuery[] }>("/queries");
+        setQueries(body.queries.map(mapBackendQuery));
       } catch (err) {
-        console.error(err);
-        if (err instanceof Error) setError(err.message);
-        else setError("Unexpected error while loading queries.");
+        setError(errorMessage(err, "Unexpected error while loading queries."));
       } finally {
         setLoading(false);
       }
@@ -139,84 +84,27 @@ export default function StudentQueries({
     void fetchQueries();
   }, [userId]);
 
-  /* ========== POST /api/queries ========== */
+  /* ========== POST /queries ========== */
   const handleSubmitQuery = async (): Promise<void> => {
     if (!newQuery.subject.trim() || !newQuery.message.trim()) return;
-
-    const token = getStoredToken();
-    if (!token) {
-      setError("Your session has expired. Please log in again.");
-      return;
-    }
 
     setSubmitting(true);
     setError(null);
 
     try {
-      const headers: HeadersInit = {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`
-      };
-
-      const payload = {
-        subject: newQuery.subject.trim(),
-        message: newQuery.message.trim(),
-        userId
-      };
-
-      const res = await fetch(`${API_BASE_URL}/queries`, {
+      const body = await api<{ query: BackendQuery }>("/queries", {
         method: "POST",
-        headers,
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          subject: newQuery.subject.trim(),
+          message: newQuery.message.trim()
+        })
       });
 
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          message?: string;
-        };
-        throw new Error(
-          body.message ??
-            `Failed to submit query. Server responded with ${res.status}.`
-        );
-      }
-
-      // Depende sa final implementation mo:
-      // Option A: server returns the created query object
-      // Option B: server returns just { success, message }
-      const body = (await res.json().catch(() => ({}))) as
-        | { success: boolean; message: string; query?: BackendQuery }
-        | BackendQuery;
-
-      let created: Query | null = null;
-
-      if ("id" in body) {
-        // direct BackendQuery
-        created = mapBackendQuery(body as BackendQuery);
-      } else if ("query" in body && body.query) {
-        created = mapBackendQuery(body.query as BackendQuery);
-      }
-
-      if (created) {
-        setQueries((prev) => [created!, ...prev]);
-      } else {
-        // optimistic add kung di mo pa na-return yung created query sa backend
-        const optimistic: Query = {
-          id: Date.now().toString(),
-          subject: payload.subject,
-          message: payload.message,
-          status: "pending",
-          date: new Date().toISOString(),
-          userId
-        };
-        setQueries((prev) => [optimistic, ...prev]);
-      }
-
+      setQueries((prev) => [mapBackendQuery(body.query), ...prev]);
       setNewQuery({ subject: "", message: "" });
       setShowNewQuery(false);
     } catch (err) {
-      console.error(err);
-      if (err instanceof Error) setError(err.message);
-      else setError("Unexpected error while submitting query.");
+      setError(errorMessage(err, "Unexpected error while submitting query."));
     } finally {
       setSubmitting(false);
     }
@@ -478,7 +366,15 @@ export default function StudentQueries({
             <div
               key={query.id}
               onClick={() => setSelectedQuery(query)}
-              className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedQuery(query);
+                }
+              }}
+              className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">

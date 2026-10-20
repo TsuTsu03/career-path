@@ -1,11 +1,16 @@
 import React from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
+import { getToken } from "../lib/session";
 
 export default function ProtectedRoute({
   children
 }: {
   children: React.ReactNode;
 }) {
-  const token = localStorage.getItem("access");
-  return token ? <>{children}</> : <Navigate to="/login" replace />;
+  const { pathname } = useLocation();
+  if (getToken()) return <>{children}</>;
+
+  return (
+    <Navigate to={pathname.startsWith("/admin") ? "/admin/login" : "/login"} replace />
+  );
 }

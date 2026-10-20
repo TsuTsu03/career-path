@@ -1,9 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api, errorMessage } from "../lib/api";
+import { useToast } from "../components/feedbackContext";
+import Icon from "../components/Icon";
+import { ADMIN_STATS_CHANGED_EVENT } from "../lib/routes";
 
 interface Query {
   id: string;
   studentId: string;
   studentName: string;
+  studentEmail: string;
   subject: string;
   message: string;
   status: "pending" | "answered";
@@ -13,216 +18,159 @@ interface Query {
   counselor?: string;
 }
 
-export default function AdminQueryManagement() {
-  const [queries, setQueries] = useState<Query[]>([
-    {
-      id: "1",
-      studentId: "STU2024001",
-      studentName: "John Doe",
-      subject: "STEM Track Requirements",
-      message:
-        "What are the specific grade requirements for the STEM track? I am currently in Grade 9 with an average of 88.",
-      status: "answered",
-      date: "2024-11-10",
-      response:
-        "Good day! For the STEM track, we recommend an average of 85 and above, especially in Science and Mathematics subjects. With your current average of 88, you are eligible for the STEM track. However, I also suggest assessing your interests and career goals through our assessment tool.",
-      responseDate: "2024-11-11",
-      counselor: "Ms. Rodriguez"
-    },
-    {
-      id: "2",
-      studentId: "STU2024002",
-      studentName: "Maria Santos",
-      subject: "Career Options in ABM",
-      message:
-        "Can you provide more information about career opportunities after taking the ABM strand?",
-      status: "pending",
-      date: "2024-11-12"
-    },
-    {
-      id: "3",
-      studentId: "STU2024003",
-      studentName: "Juan Dela Cruz",
-      subject: "Track Change Request",
-      message:
-        "I initially chose HUMSS but after taking the assessment, it recommended STEM. Can I still change my track preference?",
-      status: "pending",
-      date: "2024-11-13"
-    },
-    {
-      id: "4",
-      studentId: "STU2024004",
-      studentName: "Ana Reyes",
-      subject: "GAS Track Information",
-      message:
-        "What are the advantages of taking the GAS track compared to other specialized tracks?",
-      status: "pending",
-      date: "2024-11-13"
-    }
-  ]);
+type Filter = "all" | "pending" | "answered";
 
+export default function AdminQueryManagement() {
+  const toast = useToast();
+  const [queries, setQueries] = useState<Query[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedQuery, setSelectedQuery] = useState<Query | null>(null);
   const [response, setResponse] = useState("");
-  const [filterStatus, setFilterStatus] = useState<
-    "all" | "pending" | "answered"
-  >("all");
+  const [sending, setSending] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<Filter>("all");
+  const [search, setSearch] = useState("");
 
-  const handleSubmitResponse = () => {
-    if (selectedQuery && response.trim()) {
-      const updatedQuery: Query = {
-        ...selectedQuery,
-        status: "answered",
-        response: response,
-        responseDate: new Date().toISOString().split("T")[0],
-        counselor: "Admin User"
-      };
+  useEffect(() => {
+    api<{ queries: Query[] }>("/queries")
+      .then((data) => setQueries(data.queries))
+      .catch((err) => setError(errorMessage(err, "Failed to load queries.")))
+      .finally(() => setLoading(false));
+  }, []);
 
-      setQueries(
-        queries.map((q) => (q.id === selectedQuery.id ? updatedQuery : q))
+  const handleSubmitResponse = async () => {
+    if (!selectedQuery || !response.trim()) return;
+    setSending(true);
+    try {
+      const out = await api<{ query: Query; emailSent?: boolean }>(
+        `/queries/${selectedQuery.id}/reply`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ response: response.trim() })
+        }
+      );
+      setQueries((prev) =>
+        prev.map((q) => (q.id === out.query.id ? out.query : q))
       );
       setSelectedQuery(null);
       setResponse("");
-      alert("Response sent successfully!");
+      toast(
+        out.emailSent
+          ? "Response sent. The student was notified by email."
+          : "Response saved. The email notice could not be sent, but the student will see it in My Queries.",
+        out.emailSent ? "success" : "info"
+      );
+      window.dispatchEvent(new Event(ADMIN_STATS_CHANGED_EVENT));
+    } catch (err) {
+      toast(errorMessage(err, "Failed to send the response."), "error");
+    } finally {
+      setSending(false);
     }
   };
 
-  const filteredQueries =
-    filterStatus === "all"
-      ? queries
-      : queries.filter((q) => q.status === filterStatus);
+  const term = search.trim().toLowerCase();
+  const filteredQueries = queries.filter(
+    (q) =>
+      (filterStatus === "all" || q.status === filterStatus) &&
+      (!term ||
+        q.subject.toLowerCase().includes(term) ||
+        q.studentName.toLowerCase().includes(term) ||
+        q.studentId.toLowerCase().includes(term))
+  );
 
   const pendingCount = queries.filter((q) => q.status === "pending").length;
+  const answeredCount = queries.length - pendingCount;
 
   if (selectedQuery) {
     return (
       <div className="max-w-4xl mx-auto">
         <button
+          type="button"
           onClick={() => {
             setSelectedQuery(null);
             setResponse("");
           }}
           className="flex items-center text-purple-600 hover:text-purple-700 mb-6"
         >
-          <svg
-            className="w-5 h-5 mr-2"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
+          <Icon name="back" className="w-5 h-5 mr-2" />
           Back to Queries
         </button>
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-6 border-b border-gray-200">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <h2 className="text-gray-900">{selectedQuery.subject}</h2>
-              <span
-                className={`px-3 py-1 rounded-full ${
-                  selectedQuery.status === "answered"
-                    ? "bg-green-100 text-green-700"
-                    : "bg-yellow-100 text-yellow-700"
-                }`}
-              >
-                {selectedQuery.status === "answered" ? "Answered" : "Pending"}
-              </span>
+              <StatusPill status={selectedQuery.status} />
             </div>
-            <div className="flex items-center space-x-4 text-gray-600">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-600">
               <span>
-                From: {selectedQuery.studentName} ({selectedQuery.studentId})
+                From: {selectedQuery.studentName}
+                {selectedQuery.studentId && ` (${selectedQuery.studentId})`}
               </span>
-              <span>•</span>
+              <span aria-hidden="true">•</span>
               <span>{new Date(selectedQuery.date).toLocaleDateString()}</span>
             </div>
           </div>
 
           <div className="p-6 space-y-6">
-            {/* Student Query */}
-            <div>
-              <div className="flex items-start space-x-4">
-                <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
-                  <svg
-                    className="w-6 h-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                    />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <p className="text-gray-700 mb-1">Student Query</p>
-                  <p className="text-gray-600">{selectedQuery.message}</p>
-                </div>
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shrink-0">
+                <Icon name="user" className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-gray-700 mb-1">Student Query</p>
+                <p className="text-gray-600 whitespace-pre-line break-words">
+                  {selectedQuery.message}
+                </p>
               </div>
             </div>
 
-            {/* Existing Response */}
             {selectedQuery.response && (
               <div className="bg-green-50 rounded-lg p-6">
-                <div className="flex items-start space-x-4">
-                  <div className="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center flex-shrink-0">
-                    <svg
-                      className="w-6 h-6"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-gray-900">{selectedQuery.counselor}</p>
-                      <p className="text-gray-600">
-                        {new Date(
-                          selectedQuery.responseDate!
-                        ).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <p className="text-gray-700">{selectedQuery.response}</p>
-                  </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <p className="text-gray-900">
+                    {selectedQuery.counselor ?? "Counselor"}
+                  </p>
+                  {selectedQuery.responseDate && (
+                    <p className="text-gray-600">
+                      {new Date(selectedQuery.responseDate).toLocaleDateString()}
+                    </p>
+                  )}
                 </div>
+                <p className="text-gray-700 whitespace-pre-line break-words">
+                  {selectedQuery.response}
+                </p>
               </div>
             )}
 
-            {/* Response Form */}
             {selectedQuery.status === "pending" && (
               <div>
-                <label className="block text-gray-700 mb-2">
+                <label
+                  htmlFor="query-response"
+                  className="block text-gray-700 mb-2"
+                >
                   Your Response
                 </label>
                 <textarea
+                  id="query-response"
                   value={response}
                   onChange={(e) => setResponse(e.target.value)}
                   placeholder="Type your response to the student's query..."
                   rows={6}
+                  maxLength={5000}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
                 />
-                <div className="mt-4 flex space-x-3">
+                <div className="mt-4 flex flex-wrap gap-3">
                   <button
+                    type="button"
                     onClick={handleSubmitResponse}
-                    className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                    disabled={sending || !response.trim()}
+                    className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
                   >
-                    Send Response
+                    {sending ? "Sending..." : "Send Response"}
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       setSelectedQuery(null);
                       setResponse("");
@@ -240,9 +188,15 @@ export default function AdminQueryManagement() {
     );
   }
 
+  const tabs: { key: Filter; label: string }[] = [
+    { key: "all", label: `All Queries (${queries.length})` },
+    { key: "pending", label: `Pending (${pendingCount})` },
+    { key: "answered", label: `Answered (${answeredCount})` }
+  ];
+
   return (
     <div className="max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
           <h2 className="text-gray-900 mb-2">Student Queries Management</h2>
           <p className="text-gray-600">
@@ -250,142 +204,121 @@ export default function AdminQueryManagement() {
           </p>
         </div>
         {pendingCount > 0 && (
-          <div className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg flex items-center">
-            <svg
-              className="w-5 h-5 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+          <div className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
             {pendingCount} pending {pendingCount === 1 ? "query" : "queries"}
           </div>
         )}
       </div>
 
-      {/* Filter Tabs */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-        <div className="flex">
-          <button
-            onClick={() => setFilterStatus("all")}
-            className={`px-6 py-4 border-b-2 transition-colors ${
-              filterStatus === "all"
-                ? "border-purple-600 text-purple-600"
-                : "border-transparent text-gray-600 hover:text-gray-900"
-            }`}
-          >
-            All Queries ({queries.length})
-          </button>
-          <button
-            onClick={() => setFilterStatus("pending")}
-            className={`px-6 py-4 border-b-2 transition-colors ${
-              filterStatus === "pending"
-                ? "border-purple-600 text-purple-600"
-                : "border-transparent text-gray-600 hover:text-gray-900"
-            }`}
-          >
-            Pending ({pendingCount})
-          </button>
-          <button
-            onClick={() => setFilterStatus("answered")}
-            className={`px-6 py-4 border-b-2 transition-colors ${
-              filterStatus === "answered"
-                ? "border-purple-600 text-purple-600"
-                : "border-transparent text-gray-600 hover:text-gray-900"
-            }`}
-          >
-            Answered ({queries.filter((q) => q.status === "answered").length})
-          </button>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex overflow-x-auto" role="tablist">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={filterStatus === tab.key}
+              onClick={() => setFilterStatus(tab.key)}
+              className={`px-4 sm:px-6 py-4 border-b-2 whitespace-nowrap transition-colors ${
+                filterStatus === tab.key
+                  ? "border-purple-600 text-purple-600"
+                  : "border-transparent text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="p-3 lg:p-2 lg:pr-4">
+          <label htmlFor="query-search" className="sr-only">
+            Search queries
+          </label>
+          <input
+            id="query-search"
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search subject or student"
+            className="w-full lg:w-64 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+          />
         </div>
       </div>
 
-      {/* Queries List */}
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
       <div className="space-y-4">
-        {filteredQueries.length === 0 ? (
+        {loading ? (
+          <p className="text-gray-600">Loading queries…</p>
+        ) : filteredQueries.length === 0 ? (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
             <div className="inline-block bg-gray-100 text-gray-400 rounded-full p-6 mb-4">
-              <svg
-                className="w-16 h-16"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                />
-              </svg>
+              <Icon name="chat" className="w-16 h-16" />
             </div>
             <h3 className="text-gray-900 mb-2">No Queries Found</h3>
             <p className="text-gray-600">
-              There are no {filterStatus !== "all" && filterStatus} queries at
-              this time
+              There are no {filterStatus !== "all" && filterStatus} queries
+              {term ? " matching your search" : " at this time"}.
             </p>
           </div>
         ) : (
           filteredQueries.map((query) => (
-            <div
+            <button
               key={query.id}
+              type="button"
               onClick={() => setSelectedQuery(query)}
-              className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer"
+              className="w-full text-left bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
             >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-3 mb-2">
                     <h3 className="text-gray-900">{query.subject}</h3>
-                    <span
-                      className={`px-3 py-1 rounded-full ${
-                        query.status === "answered"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-yellow-100 text-yellow-700"
-                      }`}
-                    >
-                      {query.status === "answered" ? "Answered" : "Pending"}
-                    </span>
+                    <StatusPill status={query.status} />
                   </div>
-                  <p className="text-gray-600 mb-2 line-clamp-2">
+                  <p className="text-gray-600 mb-2 line-clamp-2 break-words">
                     {query.message}
                   </p>
-                  <div className="flex items-center text-gray-500 space-x-4">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-500">
                     <span>
-                      {query.studentName} ({query.studentId})
+                      {query.studentName}
+                      {query.studentId && ` (${query.studentId})`}
                     </span>
-                    <span>•</span>
+                    <span aria-hidden="true">•</span>
                     <span>{new Date(query.date).toLocaleDateString()}</span>
                     {query.status === "answered" && query.counselor && (
                       <>
-                        <span>•</span>
+                        <span aria-hidden="true">•</span>
                         <span>Responded by {query.counselor}</span>
                       </>
                     )}
                   </div>
                 </div>
-                <svg
-                  className="w-6 h-6 text-gray-400 flex-shrink-0 ml-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 5l7 7-7 7"
-                  />
-                </svg>
+                <Icon
+                  name="chevron"
+                  className="w-6 h-6 text-gray-400 shrink-0"
+                />
               </div>
-            </div>
+            </button>
           ))
         )}
       </div>
     </div>
+  );
+}
+
+function StatusPill({ status }: { status: Query["status"] }) {
+  return (
+    <span
+      className={`px-3 py-1 rounded-full text-sm ${
+        status === "answered"
+          ? "bg-green-100 text-green-700"
+          : "bg-yellow-100 text-yellow-700"
+      }`}
+    >
+      {status === "answered" ? "Answered" : "Pending"}
+    </span>
   );
 }

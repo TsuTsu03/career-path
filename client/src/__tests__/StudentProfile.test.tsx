@@ -161,14 +161,11 @@ describe("StudentProfile page", () => {
     await user.click(screen.getByRole("button", { name: /save changes/i }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenLastCalledWith(
-        expect.stringMatching(/\/students\/me$/),
-        expect.objectContaining({
-          method: "POST",
-          headers: expect.objectContaining({
-            Authorization: "Bearer fake-token"
-          })
-        })
+      const [url, init] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+      expect(String(url)).toMatch(/\/students\/me$/);
+      expect(init?.method).toBe("POST");
+      expect(new Headers(init?.headers).get("Authorization")).toBe(
+        "Bearer fake-token"
       );
     });
 

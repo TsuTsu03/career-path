@@ -1,0 +1,8 @@
+# Only the sign-in pages are public; everything else needs an account.
+User-agent: *
+Allow: /login
+Allow: /register
+Disallow: /student/
+Disallow: /admin/
+Disallow: /account-settings
+Disallow: /announcements

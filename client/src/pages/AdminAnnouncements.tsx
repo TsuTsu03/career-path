@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { api } from "../lib/api";
+import { api, errorMessage } from "../lib/api";
+import { useConfirm, useToast } from "../components/feedbackContext";
+import { getSessionUser } from "../lib/session";
 
 type AnnouncementCategory = "event" | "deadline" | "general" | "career";
 
@@ -37,6 +39,8 @@ export default function AdminAnnouncements() {
   const [error, setError] = useState<string | null>(null);
 
   const [showNewForm, setShowNewForm] = useState(false);
+  const toast = useToast();
+  const confirm = useConfirm();
   const [selectedAnnouncement, setSelectedAnnouncement] =
     useState<Announcement | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -46,7 +50,7 @@ export default function AdminAnnouncements() {
     title: "",
     content: "",
     category: "general",
-    author: "Admin User",
+    author: getSessionUser()?.fullName ?? "Admin",
     important: false
   });
 
@@ -80,14 +84,13 @@ export default function AdminAnnouncements() {
         title: "",
         content: "",
         category: "general",
-        author: "Admin User",
+        author: getSessionUser()?.fullName ?? "Admin",
         important: false
       });
       setShowNewForm(false);
-      alert("Announcement published successfully!");
+      toast("Announcement published.");
     } catch (err) {
-      console.error("Failed to create announcement", err);
-      alert("Failed to publish announcement. Please try again.");
+      toast(errorMessage(err, "Failed to publish announcement. Please try again."), "error");
     } finally {
       setSaving(false);
     }
@@ -116,25 +119,29 @@ export default function AdminAnnouncements() {
       );
       setSelectedAnnouncement(null);
       setIsEditing(false);
-      alert("Announcement updated successfully!");
+      toast("Announcement updated.");
     } catch (err) {
-      console.error("Failed to update announcement", err);
-      alert("Failed to update announcement. Please try again.");
+      toast(errorMessage(err, "Failed to update announcement. Please try again."), "error");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteAnnouncement = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this announcement?")) return;
+    const ok = await confirm("Students will no longer see this announcement.", {
+      title: "Delete announcement?",
+      confirmLabel: "Delete",
+      danger: true
+    });
+    if (!ok) return;
 
     try {
       await api(`/announcements/${id}`, { method: "DELETE" });
       setAnnouncements((prev) => prev.filter((a) => a.id !== id));
       setSelectedAnnouncement(null);
+      toast("Announcement deleted.");
     } catch (err) {
-      console.error("Failed to delete announcement", err);
-      alert("Failed to delete announcement. Please try again.");
+      toast(errorMessage(err, "Failed to delete announcement. Please try again."), "error");
     }
   };
 
@@ -476,7 +483,15 @@ export default function AdminAnnouncements() {
             <div
               key={announcement.id}
               onClick={() => setSelectedAnnouncement(announcement)}
-              className={`bg-white rounded-lg shadow-sm border p-6 hover:shadow-md transition-shadow cursor-pointer ${
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedAnnouncement(announcement);
+                }
+              }}
+              className={`bg-white rounded-lg shadow-sm border p-6 hover:shadow-md transition-shadow cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                 announcement.important
                   ? "border-yellow-300 border-2"
                   : "border-gray-200"

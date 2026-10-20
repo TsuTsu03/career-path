@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { api, ApiError } from "../lib/api";
+import { api, ApiError, errorMessage } from "../lib/api";
 
 type Status = "checking" | "success" | "error";
 
@@ -15,6 +15,25 @@ export default function VerifyEmail() {
 
   const [status, setStatus] = useState<Status>("checking");
   const [message, setMessage] = useState("Verifying your email...");
+  const [resendEmail, setResendEmail] = useState("");
+  const [resendNote, setResendNote] = useState("");
+  const [resending, setResending] = useState(false);
+
+  const handleResend = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setResending(true);
+    try {
+      const out = await api<{ message: string }>("/auth/resend-verification", {
+        method: "POST",
+        body: JSON.stringify({ email: resendEmail.trim().toLowerCase() })
+      });
+      setResendNote(out.message);
+    } catch (err) {
+      setResendNote(errorMessage(err, "Could not send the email."));
+    } finally {
+      setResending(false);
+    }
+  };
 
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
@@ -98,6 +117,35 @@ export default function VerifyEmail() {
         >
           {message}
         </p>
+
+        {isError && (
+          <form onSubmit={handleResend} className="mt-6 text-left space-y-3">
+            <label htmlFor="resend-email" className="block text-sm text-gray-700">
+              Need a new link? Enter your email:
+            </label>
+            <input
+              id="resend-email"
+              type="email"
+              required
+              value={resendEmail}
+              onChange={(e) => setResendEmail(e.target.value)}
+              placeholder="your.email@example.com"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+            <button
+              type="submit"
+              disabled={resending}
+              className="w-full px-4 py-2 rounded-lg border border-blue-600 text-blue-600 text-sm font-medium hover:bg-blue-50 disabled:opacity-60"
+            >
+              {resending ? "Sending..." : "Resend verification email"}
+            </button>
+            {resendNote && (
+              <p className="text-sm text-gray-700" role="status">
+                {resendNote}
+              </p>
+            )}
+          </form>
+        )}
 
         {isError && (
           <button

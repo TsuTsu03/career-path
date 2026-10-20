@@ -1,268 +1,159 @@
-import {
-  Routes,
-  Route,
-  Navigate,
-  useNavigate,
-  useLocation
-} from "react-router-dom";
-
-// Auth pages
-import Login from "./pages/Login";
-import Register from "./pages/Register";
+import { Suspense, lazy, useEffect } from "react";
+import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import ProtectedRoute from "./routes/ProtectedRoute";
+import {
+  SESSION_EXPIRED_EVENT,
+  clearSession,
+  getSessionUser
+} from "./lib/session";
+import {
+  ADMIN_VIEW_PATHS,
+  STUDENT_VIEW_PATHS,
+  type AdminView,
+  type StudentView
+} from "./lib/routes";
 
-// Dashboards
-import AdminDashboard from "./pages/AdminDashboard";
-import StudentDashboard from "./pages/StudentDashboard";
+// Pages load on demand so the login screen does not download the dashboards.
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const AdminLogin = lazy(() => import("./pages/AdminLogin"));
+const AdminSetupPassword = lazy(() => import("./pages/AdminSetupPassword"));
+const VerifyEmail = lazy(() => import("./pages/VerifyEmail"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const StudentDashboard = lazy(() => import("./pages/StudentDashboard"));
+const StudentAssessmentResult = lazy(
+  () => import("./pages/StudentAssessmentResult")
+);
 
-// Shared / student pages
-import StudentAssessmentResult from "./pages/StudentAssessmentResult";
-import VerifyEmail from "./pages/VerifyEmail";
-import AdminLogin from "./pages/AdminLogin";
-import AdminSetupPassword from "./pages/AdminSetupPassword";
+function viewFromPath<V extends string>(
+  paths: Record<V, string>,
+  pathname: string,
+  fallback: V
+): V {
+  const match = (Object.entries(paths) as [V, string][]).find(([, path]) =>
+    pathname.startsWith(path)
+  );
+  return match ? match[0] : fallback;
+}
 
 // ======================
-// Role-based dashboard
+// Role-based dashboard: the URL decides which page is shown, so the browser
+// Back and Forward buttons move between pages.
 // ======================
 function RoleBasedDashboard() {
   const nav = useNavigate();
-  const location = useLocation();
-
-  const role = localStorage.getItem("role") as "student" | "admin" | null;
-  const fullName = localStorage.getItem("fullName") || "User";
-  const email = localStorage.getItem("email") || "";
-  const id = localStorage.getItem("userId") || "";
+  const { pathname } = useLocation();
+  const session = getSessionUser();
 
   const handleLogout = () => {
-    localStorage.removeItem("access");
-    localStorage.removeItem("role");
-    localStorage.removeItem("fullName");
-    localStorage.removeItem("email");
-    localStorage.removeItem("userId");
-    nav("/login", { replace: true });
+    const wasAdmin = session?.role === "admin";
+    clearSession();
+    nav(wasAdmin ? "/admin/login" : "/login", { replace: true });
   };
 
-  const path = location.pathname;
-
-  // ---------- STUDENT VIEW MAP ----------
-  let initialStudentView:
-    | "dashboard"
-    | "profile"
-    | "assessment"
-    | "recommendations"
-    | "queries"
-    | "settings"
-    | "announcements" = "dashboard";
-
-  if (path.startsWith("/student/profile")) {
-    initialStudentView = "profile";
-  } else if (path.startsWith("/student/assessment")) {
-    initialStudentView = "assessment";
-  } else if (path.startsWith("/student/tracks")) {
-    initialStudentView = "recommendations";
-  } else if (path.startsWith("/student/queries")) {
-    initialStudentView = "queries";
-  } else if (path.startsWith("/account-settings")) {
-    initialStudentView = "settings";
-  } else if (path.startsWith("/announcements")) {
-    initialStudentView = "announcements";
-  } else if (path.startsWith("/student/dashboard") || path === "/dashboard") {
-    initialStudentView = "dashboard";
+  if (!session) {
+    return <Navigate to="/login" replace />;
   }
 
-  // ---------- ADMIN VIEW MAP ----------
-  let initialAdminView:
-    | "dashboard"
-    | "students"
-    | "tracks"
-    | "queries"
-    | "announcements"
-    | "settings" = "dashboard";
+  const user = {
+    id: session.id,
+    name: session.fullName,
+    role: session.role,
+    email: session.email
+  };
 
-  if (path.startsWith("/admin/students")) {
-    initialAdminView = "students";
-  } else if (path.startsWith("/admin/career-tracks")) {
-    initialAdminView = "tracks";
-  } else if (path.startsWith("/admin/queries")) {
-    initialAdminView = "queries";
-  } else if (path.startsWith("/admin/announcements")) {
-    initialAdminView = "announcements";
-  } else if (path.startsWith("/account-settings")) {
-    initialAdminView = "settings";
-  } else if (path.startsWith("/admin/dashboard") || path === "/dashboard") {
-    initialAdminView = "dashboard";
+  if (session.role === "admin") {
+    // A student-only URL sends an admin to their own dashboard.
+    if (pathname.startsWith("/student/")) {
+      return <Navigate to={ADMIN_VIEW_PATHS.dashboard} replace />;
+    }
+    const view = viewFromPath<AdminView>(ADMIN_VIEW_PATHS, pathname, "dashboard");
+    return <AdminDashboard user={user} onLogout={handleLogout} view={view} />;
   }
 
-  if (role === "admin") {
-    return (
-      <AdminDashboard
-        user={{ id, name: fullName, role: "admin", email }}
-        onLogout={handleLogout}
-        initialView={initialAdminView}
-      />
-    );
+  if (pathname.startsWith("/admin/")) {
+    return <Navigate to={STUDENT_VIEW_PATHS.dashboard} replace />;
   }
-
-  if (role === "student") {
-    return (
-      <StudentDashboard
-        user={{ id, name: fullName, role: "student", email }}
-        onLogout={handleLogout}
-        initialView={initialStudentView}
-      />
-    );
-  }
-
-  // Walang valid role → balik login
-  return <Navigate to="/login" replace />;
+  const view = viewFromPath<StudentView>(
+    STUDENT_VIEW_PATHS,
+    pathname,
+    "dashboard"
+  );
+  return <StudentDashboard user={user} onLogout={handleLogout} view={view} />;
 }
 
-export default function App() {
+function PageLoading() {
   return (
-    <Routes>
-      {/* Public routes */}
-      <Route path="/" element={<Navigate to="/login" replace />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/admin/login" element={<AdminLogin />} />
-      <Route path="/admin/setup-password" element={<AdminSetupPassword />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/verify-email" element={<VerifyEmail />} />
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <p className="text-gray-600" role="status">
+        Loading…
+      </p>
+    </div>
+  );
+}
 
-      {/* Generic dashboard (decides admin vs student) */}
-      <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute>
-            <RoleBasedDashboard />
-          </ProtectedRoute>
-        }
-      />
+const DASHBOARD_PATHS = [
+  "/dashboard",
+  ...Object.values(STUDENT_VIEW_PATHS),
+  ...Object.values(ADMIN_VIEW_PATHS)
+].filter((path, idx, all) => all.indexOf(path) === idx);
 
-      {/* ======================
-          Student routes
-         ====================== */}
-      <Route
-        path="/student/dashboard"
-        element={
-          <ProtectedRoute>
-            <RoleBasedDashboard />
-          </ProtectedRoute>
-        }
-      />
+export default function App() {
+  const nav = useNavigate();
 
-      <Route
-        path="/student/profile"
-        element={
-          <ProtectedRoute>
-            <RoleBasedDashboard />
-          </ProtectedRoute>
-        }
-      />
+  // api() signals an expired or rejected token; send the user to sign in.
+  useEffect(() => {
+    const onExpired = (event: Event) => {
+      const role = (event as CustomEvent<{ role?: string }>).detail?.role;
+      nav(role === "admin" ? "/admin/login" : "/login", {
+        replace: true,
+        state: { sessionExpired: true }
+      });
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, [nav]);
 
-      <Route
-        path="/student/assessment"
-        element={
-          <ProtectedRoute>
-            <RoleBasedDashboard />
-          </ProtectedRoute>
-        }
-      />
+  return (
+    <Suspense fallback={<PageLoading />}>
+      <Routes>
+        {/* Public routes */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin/setup-password" element={<AdminSetupPassword />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
-      <Route
-        path="/student/assessment/result"
-        element={
-          <ProtectedRoute>
-            <StudentAssessmentResult />
-          </ProtectedRoute>
-        }
-      />
+        <Route
+          path="/student/assessment/result"
+          element={
+            <ProtectedRoute>
+              <StudentAssessmentResult />
+            </ProtectedRoute>
+          }
+        />
 
-      <Route
-        path="/student/queries"
-        element={
-          <ProtectedRoute>
-            <RoleBasedDashboard />
-          </ProtectedRoute>
-        }
-      />
+        {/* Student and admin portal pages */}
+        {DASHBOARD_PATHS.map((path) => (
+          <Route
+            key={path}
+            path={path}
+            element={
+              <ProtectedRoute>
+                <RoleBasedDashboard />
+              </ProtectedRoute>
+            }
+          />
+        ))}
 
-      <Route
-        path="/student/tracks"
-        element={
-          <ProtectedRoute>
-            <RoleBasedDashboard />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/account-settings"
-        element={
-          <ProtectedRoute>
-            <RoleBasedDashboard />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/announcements"
-        element={
-          <ProtectedRoute>
-            <RoleBasedDashboard />
-          </ProtectedRoute>
-        }
-      />
-
-      {/* ======================
-          Admin routes
-         ====================== */}
-      <Route
-        path="/admin/dashboard"
-        element={
-          <ProtectedRoute>
-            <RoleBasedDashboard />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/admin/announcements"
-        element={
-          <ProtectedRoute>
-            <RoleBasedDashboard />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/admin/career-tracks"
-        element={
-          <ProtectedRoute>
-            <RoleBasedDashboard />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/admin/queries"
-        element={
-          <ProtectedRoute>
-            <RoleBasedDashboard />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/admin/students"
-        element={
-          <ProtectedRoute>
-            <RoleBasedDashboard />
-          </ProtectedRoute>
-        }
-      />
-
-      {/* Catch-all */}
-      <Route path="*" element={<Navigate to="/login" replace />} />
-    </Routes>
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </Suspense>
   );
 }

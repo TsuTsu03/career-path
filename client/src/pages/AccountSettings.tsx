@@ -1,5 +1,7 @@
-import { useState } from "react";
-import { api, ApiError } from "../lib/api";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { api, errorMessage } from "../lib/api";
+import { updateStoredName } from "../lib/session";
+import { useToast } from "../components/feedbackContext";
 import PasswordInput from "../components/PasswordInput";
 
 interface AccountSettingsProps {
@@ -11,480 +13,398 @@ interface AccountSettingsProps {
   };
 }
 
-type ActiveTab = "account" | "notifications" | "privacy" | "add-admin";
+type ActiveTab = "account" | "password" | "admins";
+
+interface AdminRow {
+  id: string;
+  fullName: string;
+  email: string;
+  createdAt: string | null;
+  pendingSetup: boolean;
+  setupLinkExpired: boolean;
+}
+
+const inputClass =
+  "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none";
+
+function passwordProblems(password: string): string[] {
+  const problems: string[] = [];
+  if (password.length < 8) problems.push("at least 8 characters");
+  if (!/[A-Z]/.test(password)) problems.push("an uppercase letter");
+  if (!/[0-9]/.test(password)) problems.push("a number");
+  if (!/[^A-Za-z0-9]/.test(password)) problems.push("a special character");
+  return problems;
+}
 
 export default function AccountSettings({ user }: AccountSettingsProps) {
-  const [settings, setSettings] = useState({
-    email: user.email,
-    currentPassword: "",
-    newPassword: "",
-    confirmPassword: "",
-    emailNotifications: true,
-    queryNotifications: true,
-    announcementNotifications: true,
-    theme: "light"
-  });
-
-  const [newAdmin, setNewAdmin] = useState({
-    fullName: "",
-    email: ""
-  });
-
+  const isAdmin = user.role === "admin";
   const [activeTab, setActiveTab] = useState<ActiveTab>("account");
-  const [addAdminLoading, setAddAdminLoading] = useState(false);
 
-  const handleSaveAccount = () => {
-    alert("Account settings saved successfully!");
-  };
-
-  const handleChangePassword = () => {
-    if (settings.newPassword === settings.confirmPassword) {
-      alert("Password changed successfully!");
-      setSettings({
-        ...settings,
-        currentPassword: "",
-        newPassword: "",
-        confirmPassword: ""
-      });
-    } else {
-      alert("New passwords do not match!");
-    }
-  };
-
-  const handleAddAdmin = async () => {
-    if (!newAdmin.fullName.trim() || !newAdmin.email.trim()) {
-      alert("Please enter the admin's full name and email.");
-      return;
-    }
-
-    try {
-      setAddAdminLoading(true);
-
-      const token = localStorage.getItem("access");
-
-      await api("/auth/admin/create", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          fullName: newAdmin.fullName.trim(),
-          email: newAdmin.email.trim().toLowerCase()
-        })
-      });
-
-      alert("Admin created successfully. Password setup email sent.");
-      setNewAdmin({
-        fullName: "",
-        email: ""
-      });
-    } catch (error: unknown) {
-      console.error(error);
-
-      if (error instanceof ApiError) {
-        const apiMessage =
-          typeof error.data === "object" &&
-          error.data !== null &&
-          "message" in error.data &&
-          typeof (error.data as { message?: unknown }).message === "string"
-            ? (error.data as { message: string }).message
-            : undefined;
-
-        alert(apiMessage ?? error.message);
-      } else if (error instanceof Error) {
-        alert(error.message);
-      } else {
-        alert("Failed to create admin.");
-      }
-    } finally {
-      setAddAdminLoading(false);
-    }
-  };
+  const tabs: { key: ActiveTab; label: string }[] = [
+    { key: "account", label: "Account" },
+    { key: "password", label: "Password" },
+    ...(isAdmin ? [{ key: "admins" as const, label: "Administrators" }] : [])
+  ];
 
   return (
     <div className="max-w-4xl mx-auto">
       <div className="mb-6">
         <h2 className="text-gray-900 mb-2">Account Settings</h2>
-        <p className="text-gray-600">
-          Manage your account preferences and security
-        </p>
+        <p className="text-gray-600">Manage your account details and password</p>
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="border-b border-gray-200 overflow-x-auto">
-          <div className="flex min-w-max">
+        <div className="border-b border-gray-200 flex overflow-x-auto" role="tablist">
+          {tabs.map((tab) => (
             <button
-              onClick={() => setActiveTab("account")}
-              className={`px-6 py-4 border-b-2 transition-colors ${
-                activeTab === "account"
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-4 sm:px-6 py-4 border-b-2 whitespace-nowrap transition-colors ${
+                activeTab === tab.key
                   ? "border-blue-600 text-blue-600"
                   : "border-transparent text-gray-600 hover:text-gray-900"
               }`}
             >
-              Account
+              {tab.label}
             </button>
-
-            <button
-              onClick={() => setActiveTab("notifications")}
-              className={`px-6 py-4 border-b-2 transition-colors ${
-                activeTab === "notifications"
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Notifications
-            </button>
-
-            <button
-              onClick={() => setActiveTab("privacy")}
-              className={`px-6 py-4 border-b-2 transition-colors ${
-                activeTab === "privacy"
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Privacy
-            </button>
-
-            {user.role === "admin" && (
-              <button
-                onClick={() => setActiveTab("add-admin")}
-                className={`px-6 py-4 border-b-2 transition-colors ${
-                  activeTab === "add-admin"
-                    ? "border-blue-600 text-blue-600"
-                    : "border-transparent text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Add New Admin
-              </button>
-            )}
-          </div>
+          ))}
         </div>
 
-        <div className="p-8">
-          {activeTab === "account" && (
-            <div className="space-y-8">
-              <div>
-                <h3 className="text-gray-900 mb-4 pb-2 border-b border-gray-200">
-                  Account Information
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-gray-700 mb-2">
-                      Email Address
-                    </label>
-                    <input
-                      type="email"
-                      value={settings.email}
-                      onChange={(e) =>
-                        setSettings({ ...settings, email: e.target.value })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    />
-                  </div>
-                  <button
-                    onClick={handleSaveAccount}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    Save Changes
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-gray-900 mb-4 pb-2 border-b border-gray-200">
-                  Change Password
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-gray-700 mb-2">
-                      Current Password
-                    </label>
-                    <PasswordInput
-                      value={settings.currentPassword}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          currentPassword: e.target.value
-                        })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">
-                      New Password
-                    </label>
-                    <PasswordInput
-                      value={settings.newPassword}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          newPassword: e.target.value
-                        })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">
-                      Confirm New Password
-                    </label>
-                    <PasswordInput
-                      value={settings.confirmPassword}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          confirmPassword: e.target.value
-                        })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    />
-                  </div>
-                  <button
-                    onClick={handleChangePassword}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    Update Password
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "notifications" && (
-            <div>
-              <h3 className="text-gray-900 mb-4 pb-2 border-b border-gray-200">
-                Notification Preferences
-              </h3>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between py-3">
-                  <div>
-                    <p className="text-gray-900">Email Notifications</p>
-                    <p className="text-gray-600">Receive updates via email</p>
-                  </div>
-                  <button
-                    onClick={() =>
-                      setSettings({
-                        ...settings,
-                        emailNotifications: !settings.emailNotifications
-                      })
-                    }
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      settings.emailNotifications
-                        ? "bg-blue-600"
-                        : "bg-gray-300"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        settings.emailNotifications
-                          ? "translate-x-6"
-                          : "translate-x-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between py-3">
-                  <div>
-                    <p className="text-gray-900">
-                      Query Response Notifications
-                    </p>
-                    <p className="text-gray-600">
-                      Get notified when counselors respond to your queries
-                    </p>
-                  </div>
-                  <button
-                    onClick={() =>
-                      setSettings({
-                        ...settings,
-                        queryNotifications: !settings.queryNotifications
-                      })
-                    }
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      settings.queryNotifications
-                        ? "bg-blue-600"
-                        : "bg-gray-300"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        settings.queryNotifications
-                          ? "translate-x-6"
-                          : "translate-x-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between py-3">
-                  <div>
-                    <p className="text-gray-900">Announcement Notifications</p>
-                    <p className="text-gray-600">
-                      Receive notifications about new announcements and events
-                    </p>
-                  </div>
-                  <button
-                    onClick={() =>
-                      setSettings({
-                        ...settings,
-                        announcementNotifications:
-                          !settings.announcementNotifications
-                      })
-                    }
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      settings.announcementNotifications
-                        ? "bg-blue-600"
-                        : "bg-gray-300"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        settings.announcementNotifications
-                          ? "translate-x-6"
-                          : "translate-x-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "privacy" && (
-            <div>
-              <h3 className="text-gray-900 mb-4 pb-2 border-b border-gray-200">
-                Privacy Settings
-              </h3>
-              <div className="space-y-6">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-start">
-                    <svg
-                      className="w-6 h-6 text-blue-600 mr-3 mt-0.5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    <div>
-                      <p className="text-gray-900 mb-1">Data Privacy Notice</p>
-                      <p className="text-gray-700">
-                        Your personal information and assessment results are
-                        kept confidential and secure. Only authorized counselors
-                        and administrators can access your data for guidance
-                        purposes.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-gray-900 mb-2">Profile Visibility</p>
-                  <p className="text-gray-600 mb-3">
-                    Your profile is only visible to counselors and
-                    administrators
-                  </p>
-                  <div className="bg-gray-100 px-4 py-2 rounded-lg inline-block text-gray-700">
-                    Private
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-gray-900 mb-2">Data Export</p>
-                  <p className="text-gray-600 mb-3">
-                    Download a copy of your personal data and assessment results
-                  </p>
-                  <button className="px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors">
-                    Export My Data
-                  </button>
-                </div>
-
-                <div className="pt-6 border-t border-gray-200">
-                  <p className="text-gray-900 mb-2">Delete Account</p>
-                  <p className="text-gray-600 mb-3">
-                    Permanently delete your account and all associated data
-                  </p>
-                  <button className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
-                    Delete Account
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "add-admin" && user.role === "admin" && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-gray-900 mb-4 pb-2 border-b border-gray-200">
-                  Add New Admin
-                </h3>
-                <p className="text-gray-600 mb-6">
-                  Create a new administrator or counselor account. Only existing
-                  admins can access this section.
-                </p>
-
-                <div className="space-y-4 max-w-xl">
-                  <div>
-                    <label className="block text-gray-700 mb-2">
-                      Full Name
-                    </label>
-                    <input
-                      type="text"
-                      value={newAdmin.fullName}
-                      onChange={(e) =>
-                        setNewAdmin({
-                          ...newAdmin,
-                          fullName: e.target.value
-                        })
-                      }
-                      placeholder="Juan Dela Cruz"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-gray-700 mb-2">
-                      Email Address
-                    </label>
-                    <input
-                      type="email"
-                      value={newAdmin.email}
-                      onChange={(e) =>
-                        setNewAdmin({
-                          ...newAdmin,
-                          email: e.target.value
-                        })
-                      }
-                      placeholder="admin@school.edu"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    />
-                  </div>
-
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-                    Make sure this email belongs to an authorized school admin
-                    or counselor before creating access.
-                  </div>
-
-                  <button
-                    onClick={handleAddAdmin}
-                    disabled={addAdminLoading}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    {addAdminLoading ? "Creating..." : "Add Admin"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+        <div className="p-6">
+          {activeTab === "account" && <AccountTab user={user} />}
+          {activeTab === "password" && <PasswordTab />}
+          {activeTab === "admins" && isAdmin && <AdminsTab currentUserId={user.id} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+function AccountTab({ user }: AccountSettingsProps) {
+  const toast = useToast();
+  const [fullName, setFullName] = useState(user.name);
+  const [studentId, setStudentId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api<{ user: { fullName: string; studentId: string | null } }>("/auth/me")
+      .then((out) => {
+        setFullName(out.user.fullName);
+        setStudentId(out.user.studentId);
+      })
+      .catch(() => {
+        // keep the name from the session
+      });
+  }, []);
+
+  const save = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const out = await api<{ user: { fullName: string } }>("/auth/me", {
+        method: "PATCH",
+        body: JSON.stringify({ fullName })
+      });
+      updateStoredName(out.user.fullName);
+      toast("Account details saved.");
+    } catch (err) {
+      toast(errorMessage(err, "Failed to save your details."), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={save} className="space-y-6 max-w-xl">
+      <div>
+        <label htmlFor="account-name" className="block text-gray-700 mb-2">
+          Full name
+        </label>
+        <input
+          id="account-name"
+          required
+          maxLength={120}
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          className={inputClass}
+        />
+      </div>
+      <div>
+        <label htmlFor="account-email" className="block text-gray-700 mb-2">
+          Email address
+        </label>
+        <input
+          id="account-email"
+          type="email"
+          value={user.email}
+          readOnly
+          className={`${inputClass} bg-gray-50 text-gray-600`}
+        />
+        <p className="text-sm text-gray-500 mt-1">
+          {user.role === "student"
+            ? "Ask your school admin if your email needs to change."
+            : "Contact another administrator if your email needs to change."}
+        </p>
+      </div>
+      {studentId && (
+        <div>
+          <p className="block text-gray-700 mb-2">Student ID</p>
+          <p className="text-gray-900">{studentId}</p>
+        </div>
+      )}
+      <button
+        type="submit"
+        disabled={saving}
+        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60"
+      >
+        {saving ? "Saving..." : "Save Changes"}
+      </button>
+    </form>
+  );
+}
+
+function PasswordTab() {
+  const toast = useToast();
+  const [form, setForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: ""
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const problems = passwordProblems(form.newPassword);
+
+  const submit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+    if (problems.length) {
+      setError(`New password needs ${problems.join(", ")}.`);
+      return;
+    }
+    if (form.newPassword !== form.confirmPassword) {
+      setError("New passwords do not match.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify(form)
+      });
+      setForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      toast("Password changed.");
+    } catch (err) {
+      setError(errorMessage(err, "Failed to change the password."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-6 max-w-xl">
+      {error && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      <div>
+        <label htmlFor="current-password" className="block text-gray-700 mb-2">
+          Current password
+        </label>
+        <PasswordInput
+          id="current-password"
+          autoComplete="current-password"
+          required
+          value={form.currentPassword}
+          onChange={(e) => setForm({ ...form, currentPassword: e.target.value })}
+          className={inputClass}
+        />
+      </div>
+      <div>
+        <label htmlFor="new-password" className="block text-gray-700 mb-2">
+          New password
+        </label>
+        <PasswordInput
+          id="new-password"
+          autoComplete="new-password"
+          required
+          value={form.newPassword}
+          onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
+          className={inputClass}
+        />
+        {form.newPassword && problems.length > 0 && (
+          <p className="text-xs text-gray-600 mt-1">
+            Still needs: {problems.join(", ")}.
+          </p>
+        )}
+      </div>
+      <div>
+        <label htmlFor="confirm-password" className="block text-gray-700 mb-2">
+          Confirm new password
+        </label>
+        <PasswordInput
+          id="confirm-password"
+          autoComplete="new-password"
+          required
+          value={form.confirmPassword}
+          onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+          className={inputClass}
+        />
+      </div>
+      <button
+        type="submit"
+        disabled={saving}
+        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60"
+      >
+        {saving ? "Updating..." : "Change Password"}
+      </button>
+    </form>
+  );
+}
+
+function AdminsTab({ currentUserId }: { currentUserId: string }) {
+  const toast = useToast();
+  const [admins, setAdmins] = useState<AdminRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [newAdmin, setNewAdmin] = useState({ fullName: "", email: "" });
+  const [adding, setAdding] = useState(false);
+  const [resending, setResending] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const out = await api<{ admins: AdminRow[] }>("/admin/admins");
+      setAdmins(out.admins);
+    } catch (err) {
+      setError(errorMessage(err, "Failed to load administrators."));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const addAdmin = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setAdding(true);
+    try {
+      const out = await api<{ message: string }>("/auth/admin/create", {
+        method: "POST",
+        body: JSON.stringify({
+          fullName: newAdmin.fullName.trim(),
+          email: newAdmin.email.trim().toLowerCase()
+        })
+      });
+      setNewAdmin({ fullName: "", email: "" });
+      toast(out.message);
+      await load();
+    } catch (err) {
+      toast(errorMessage(err, "Failed to create admin."), "error");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const resend = async (admin: AdminRow) => {
+    setResending(admin.id);
+    try {
+      await api(`/admin/admins/${admin.id}/resend-setup`, { method: "POST" });
+      toast(`New setup link sent to ${admin.email}.`);
+      await load();
+    } catch (err) {
+      toast(errorMessage(err, "Failed to send the setup link."), "error");
+    } finally {
+      setResending(null);
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <section>
+        <h3 className="text-gray-900 mb-3">Administrators</h3>
+        {error && <p className="text-sm text-red-700">{error}</p>}
+        {!admins && !error && <p className="text-gray-600">Loading…</p>}
+        {admins && (
+          <ul className="divide-y divide-gray-200 border border-gray-200 rounded-lg">
+            {admins.map((a) => (
+              <li key={a.id} className="p-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-gray-900">
+                    {a.fullName}
+                    {a.id === currentUserId && (
+                      <span className="text-gray-500"> (you)</span>
+                    )}
+                  </p>
+                  <p className="text-sm text-gray-600 break-all">{a.email}</p>
+                </div>
+                {a.pendingSetup ? (
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800">
+                      {a.setupLinkExpired ? "Setup link expired" : "Waiting for setup"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => resend(a)}
+                      disabled={resending === a.id}
+                      className="text-sm text-purple-600 hover:text-purple-800 font-medium disabled:opacity-60"
+                    >
+                      {resending === a.id ? "Sending…" : "Resend link"}
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700">
+                    Active
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <form onSubmit={addAdmin} className="space-y-4 max-w-xl">
+        <div>
+          <h3 className="text-gray-900">Add Administrator</h3>
+          <p className="text-sm text-gray-600">
+            The new admin gets an email with a link to set their password. The
+            link works for 24 hours.
+          </p>
+        </div>
+        <div>
+          <label htmlFor="admin-name" className="block text-gray-700 mb-2">
+            Full name
+          </label>
+          <input
+            id="admin-name"
+            required
+            value={newAdmin.fullName}
+            onChange={(e) => setNewAdmin({ ...newAdmin, fullName: e.target.value })}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label htmlFor="admin-email" className="block text-gray-700 mb-2">
+            Email address
+          </label>
+          <input
+            id="admin-email"
+            type="email"
+            required
+            value={newAdmin.email}
+            onChange={(e) => setNewAdmin({ ...newAdmin, email: e.target.value })}
+            className={inputClass}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={adding}
+          className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-60"
+        >
+          {adding ? "Creating..." : "Create Admin"}
+        </button>
+      </form>
     </div>
   );
 }

@@ -10,11 +10,11 @@ type BackendQuery = {
   message: string;
   status: "pending" | "answered";
   userId: string;
-  createdAt?: string;
-  answeredAt?: string;
+  date?: string;
+  responseDate?: string;
   updatedAt?: string;
   response?: string;
-  counselorName?: string;
+  counselor?: string;
 };
 
 type QueriesResponse = {
@@ -86,7 +86,7 @@ describe("StudentQueries page", () => {
             message: "Which track is best for me?",
             status: "pending",
             userId: "student-1",
-            createdAt: "2026-04-01T00:00:00.000Z"
+            date: "2026-04-01T00:00:00.000Z"
           }
         ]
       })
@@ -140,7 +140,7 @@ describe("StudentQueries page", () => {
             message: "New message",
             status: "pending",
             userId: "student-1",
-            createdAt: "2026-04-02T00:00:00.000Z"
+            date: "2026-04-02T00:00:00.000Z"
           }
         })
       );
@@ -176,10 +176,10 @@ describe("StudentQueries page", () => {
             message: "Please help me decide",
             status: "answered",
             userId: "student-1",
-            createdAt: "2026-04-01T00:00:00.000Z",
+            date: "2026-04-01T00:00:00.000Z",
             response: "You may consider STEM.",
-            counselorName: "Counselor Ana",
-            answeredAt: "2026-04-02T00:00:00.000Z"
+            counselor: "Counselor Ana",
+            responseDate: "2026-04-02T00:00:00.000Z"
           }
         ]
       })

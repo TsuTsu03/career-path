@@ -317,7 +317,15 @@ export default function Announcements() {
           <div
             key={announcement.id}
             onClick={() => setSelectedAnnouncement(announcement)}
-            className={`bg-white rounded-lg shadow-sm border p-6 hover:shadow-md transition-shadow cursor-pointer ${
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setSelectedAnnouncement(announcement);
+              }
+            }}
+            className={`bg-white rounded-lg shadow-sm border p-6 hover:shadow-md transition-shadow cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
               announcement.important
                 ? "border-yellow-300 border-2"
                 : "border-gray-200"

@@ -1,6 +1,8 @@
 // client/src/components/Assessment.tsx
 import { useState, useEffect, type JSX } from "react";
 import { useNavigate } from "react-router-dom";
+import { api, ApiError, errorMessage } from "../lib/api";
+import { getSessionUser, getToken } from "../lib/session";
 type TrackKey = "stem" | "abm" | "humss" | "gas";
 
 type AptitudeDomain =
@@ -65,18 +67,38 @@ interface BackendResult {
   assessmentId?: string;
 }
 
-const API_BASE_URL =
-  (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env
-    ?.VITE_API_URL ?? "http://localhost:9007";
+// Answers in progress survive a refresh. Keyed by user so a shared computer
+// never shows one student another's draft.
+interface AssessmentDraft {
+  questions: AssessmentQuestion[];
+  assessmentToken: string;
+  answers: Record<number, AssessmentOption | undefined>;
+  currentQuestion: number;
+}
 
-// Helper: use the same key as Login.tsx
-function getStoredToken(): string | null {
-  // Login saves it as localStorage.setItem("access", out.token)
-  return localStorage.getItem("access");
+function draftKey(): string {
+  return `assessmentDraft:${getSessionUser()?.id ?? "anon"}`;
+}
+
+function loadDraft(): AssessmentDraft | null {
+  try {
+    const raw = localStorage.getItem(draftKey());
+    return raw ? (JSON.parse(raw) as AssessmentDraft) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft(): void {
+  try {
+    localStorage.removeItem(draftKey());
+  } catch {
+    // ignore
+  }
 }
 
 export default function Assessment({
-  onComplete,
+  onComplete
 }: AssessmentProps): JSX.Element {
   const navigate = useNavigate();
 
@@ -90,54 +112,31 @@ export default function Assessment({
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<AssessmentDraft | null>(() => loadDraft());
 
-  // NEW: existing/latest result
   const [existingResult, setExistingResult] = useState<AssessmentResult | null>(
-    null,
+    null
   );
   const [checkingExisting, setCheckingExisting] = useState(true);
 
   // Check if the student already has an assessment result
   useEffect(() => {
     const checkExistingResult = async (): Promise<void> => {
-      const token = getStoredToken();
-      if (!token) {
+      if (!getToken()) {
         setCheckingExisting(false);
         return;
       }
 
       try {
-        const headers: HeadersInit = {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        };
-
-        const res = await fetch(`${API_BASE_URL}/assessments/aptitude/latest`, {
-          method: "GET",
-          headers,
-        });
-
-        if (res.status === 404) {
-          // No previous result
-          setExistingResult(null);
-          setCheckingExisting(false);
-          return;
-        }
-
-        if (!res.ok) {
-          // Any error: just proceed as if no existing result
-          console.error(
-            "Failed to load existing assessment result:",
-            res.status,
-          );
-          setCheckingExisting(false);
-          return;
-        }
-
-        const body = (await res.json()) as BackendResult;
+        const body = await api<BackendResult>("/assessments/aptitude/latest");
         setExistingResult(body);
+        clearDraft();
+        setDraft(null);
       } catch (err) {
-        console.error("Error checking existing assessment:", err);
+        // 404 means no result yet; any other error: let them start anyway.
+        if (!(err instanceof ApiError && err.status === 404)) {
+          console.error("Error checking existing assessment:", err);
+        }
       } finally {
         setCheckingExisting(false);
       }
@@ -146,61 +145,70 @@ export default function Assessment({
     void checkExistingResult();
   }, []);
 
+  // Save progress after every answer or page change.
+  useEffect(() => {
+    if (!started || !assessmentToken || questions.length === 0) return;
+    try {
+      localStorage.setItem(
+        draftKey(),
+        JSON.stringify({ questions, assessmentToken, answers, currentQuestion })
+      );
+    } catch {
+      // storage full or blocked: the assessment still works, just no resume
+    }
+  }, [started, assessmentToken, questions, answers, currentQuestion]);
+
+  // Warn before closing the tab in the middle of the assessment.
+  useEffect(() => {
+    if (!started || submitting) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [started, submitting]);
+
   const handleAnswer = (questionId: number, option: AssessmentOption): void => {
     setAnswers((prev) => ({ ...prev, [questionId]: option }));
+  };
+
+  const resumeDraft = (): void => {
+    if (!draft) return;
+    setQuestions(draft.questions);
+    setAssessmentToken(draft.assessmentToken);
+    setAnswers(draft.answers);
+    setCurrentQuestion(
+      Math.min(draft.currentQuestion, draft.questions.length - 1)
+    );
+    setStarted(true);
   };
 
   const startAssessment = async (): Promise<void> => {
     setLoadingQuestions(true);
     setError(null);
 
-    const token = getStoredToken();
-    if (!token) {
+    if (!getToken()) {
       setError(
-        "No token found. Please log in again before taking the assessment.",
+        "No token found. Please log in again before taking the assessment."
       );
       setLoadingQuestions(false);
       return;
     }
 
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/assessments/aptitude/questions`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        },
+      const body = await api<QuestionSetResponse>(
+        "/assessments/aptitude/questions"
       );
-
-      if (!res.ok) {
-        let message = `Could not load the assessment (${res.status})`;
-        try {
-          const body = (await res.json()) as { message?: string };
-          if (body.message) message = body.message;
-        } catch {
-          // ignore JSON parse error
-        }
-        if (res.status === 401) {
-          message = "Your session may have expired. Please log in again.";
-        }
-        throw new Error(message);
-      }
-
-      const body = (await res.json()) as QuestionSetResponse;
+      clearDraft();
+      setDraft(null);
       setQuestions(body.questions);
       setAssessmentToken(body.assessmentToken);
       setAnswers({});
       setCurrentQuestion(0);
       setStarted(true);
     } catch (err) {
-      console.error(err);
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unexpected error while loading the assessment.",
+        errorMessage(err, "Unexpected error while loading the assessment.")
       );
     } finally {
       setLoadingQuestions(false);
@@ -211,73 +219,41 @@ export default function Assessment({
     setSubmitting(true);
     setError(null);
 
-    const token = getStoredToken();
-
-    if (!token) {
-      setError(
-        "No token found. Please log in again before taking the assessment.",
-      );
-      setSubmitting(false);
-      return;
-    }
-
     const payload = {
       assessmentToken,
       answers: questions.map((q) => {
         const selected = answers[q.id];
         return {
           questionId: q.id,
-          selectedOptionId: selected ? selected.id : "",
+          selectedOptionId: selected ? selected.id : ""
         };
-      }),
+      })
     };
 
     try {
-      const headers: HeadersInit = {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      };
-
-      const res = await fetch(`${API_BASE_URL}/assessments/aptitude`, {
+      const body = await api<BackendResult>("/assessments/aptitude", {
         method: "POST",
-        headers,
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload)
       });
 
-      if (!res.ok) {
-        let message = `Assessment failed (${res.status})`;
-
-        try {
-          const body = (await res.json()) as { message?: string };
-          if (body.message) message = body.message;
-        } catch {
-          // ignore JSON parse error
-        }
-
-        if (res.status === 401) {
-          message =
-            "Your session may have expired. Please log in again before taking the assessment.";
-        }
-
-        throw new Error(message);
-      }
-
-      const body = (await res.json()) as BackendResult;
-
+      clearDraft();
       if (onComplete) {
         onComplete(body);
       }
 
       navigate("/student/assessment/result", {
-        state: body,
+        state: body
       });
     } catch (err) {
-      console.error(err);
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("Unexpected error while submitting assessment.");
+      const message = errorMessage(
+        err,
+        "Unexpected error while submitting assessment."
+      );
+      // The signed question set expired (4 hours): start a fresh one.
+      if (err instanceof ApiError && err.status === 400) {
+        clearDraft();
       }
+      setError(message);
     } finally {
       setSubmitting(false);
     }
@@ -297,12 +273,9 @@ export default function Assessment({
     }
   };
 
-  // Helper for existing result display
-  const getPercentage = (result: AssessmentResult, score: number): number => {
-    const maxScore = Math.max(...Object.values(result.allScores));
-    if (!maxScore || maxScore <= 0) return 0;
-    return Math.round((score / maxScore) * 100);
-  };
+  // Scores are already 0-100 (the decision tree's confidence per strand).
+  const getPercentage = (_result: AssessmentResult, score: number): number =>
+    Math.round(score);
 
   /* ---------- Pre-assessment screen ---------- */
 
@@ -336,9 +309,8 @@ export default function Assessment({
                 You have already taken the Career Track Aptitude Assessment
               </h2>
               <p className="text-gray-600">
-                Below is a quick summary of your latest result. You can choose
-                to view the full recommendations or retake the assessment if you
-                want to update your results.
+                Below is a quick summary of your latest result. To take the
+                assessment again, ask your school counselor to reset it.
               </p>
             </div>
 
@@ -427,12 +399,36 @@ export default function Assessment({
             <p className="text-sm text-red-600 mb-4 text-center">{error}</p>
           )}
 
+          {draft && (
+            <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+              You have an unfinished assessment (
+              {Object.values(draft.answers).filter(Boolean).length} of{" "}
+              {draft.questions.length} answered).
+              <button
+                type="button"
+                onClick={resumeDraft}
+                className="mt-3 w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Continue where I left off
+              </button>
+            </div>
+          )}
+
           <button
+            type="button"
             onClick={() => void startAssessment()}
             disabled={loadingQuestions}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`w-full py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+              draft
+                ? "border border-gray-300 text-gray-700 hover:bg-gray-50"
+                : "bg-blue-600 text-white hover:bg-blue-700"
+            }`}
           >
-            {loadingQuestions ? "Loading questions..." : "Start Assessment"}
+            {loadingQuestions
+              ? "Loading questions..."
+              : draft
+                ? "Start over with new questions"
+                : "Start Assessment"}
           </button>
         </div>
       </div>

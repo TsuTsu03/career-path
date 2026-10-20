@@ -2,12 +2,7 @@
 import { useEffect, useState, type JSX } from "react";
 import { useNavigate } from "react-router-dom";
 import jsPDF from "jspdf";
-
-const API_BASE_URL =
-  (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env
-    ?.VITE_API_URL ?? "http://localhost:9007";
-
-/* ---------------------- Types ---------------------- */
+import { api, ApiError, errorMessage } from "../lib/api";
 
 const trackDetails = {
   stem: {
@@ -174,17 +169,22 @@ export interface AssessmentResults {
 
 type BackendResult = AssessmentResults;
 
-/* -------------- Helper to get token -------------- */
+interface TrackDetail {
+  name: string;
+  fullName: string;
+  description: string;
+  color: "blue" | "green" | "purple" | "orange";
+  icon: JSX.Element;
+  careers: readonly string[];
+  subjects: readonly string[];
+}
 
-function getStoredToken(): string | null {
-  const keys = ["access", "token", "accessToken", "authToken"];
-  for (const key of keys) {
-    const fromLocal = localStorage.getItem(key);
-    if (fromLocal) return fromLocal;
-    const fromSession = sessionStorage.getItem(key);
-    if (fromSession) return fromSession;
-  }
-  return null;
+interface LiveTrack {
+  code: TrackKey;
+  fullName: string;
+  description: string;
+  careers: string[];
+  subjects: string[];
 }
 
 /* ---------------- Component ---------------- */
@@ -196,55 +196,56 @@ export default function TrackRecommendations(): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Strand details: the built-in copy, overridden by whatever the school's
+  // admins saved in Career Tracks.
+  const [liveDetails, setLiveDetails] =
+    useState<Record<TrackKey, TrackDetail>>(trackDetails);
+
   useEffect(() => {
     const fetchLatestResult = async (): Promise<void> => {
       setLoading(true);
       setError(null);
 
-      const token = getStoredToken();
-      const headers: HeadersInit = {
-        "Content-Type": "application/json"
-      };
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-
       try {
-        const res = await fetch(`${API_BASE_URL}/assessments/aptitude/latest`, {
-          method: "GET",
-          headers
-        });
-
-        if (res.status === 404) {
-          setAssessmentResults(null);
-          setLoading(false);
-          return;
-        }
-
-        if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as {
-            message?: string;
-          };
-          throw new Error(
-            body.message ?? `Failed to load assessment result (${res.status})`
-          );
-        }
-
-        const body = (await res.json()) as BackendResult;
+        const body = await api<BackendResult>("/assessments/aptitude/latest");
         setAssessmentResults(body);
       } catch (err) {
-        console.error(err);
-        if (err instanceof Error) {
-          setError(err.message);
+        if (err instanceof ApiError && err.status === 404) {
+          setAssessmentResults(null);
         } else {
-          setError("Unexpected error while loading assessment result.");
+          setError(
+            errorMessage(err, "Unexpected error while loading assessment result.")
+          );
         }
       } finally {
         setLoading(false);
       }
     };
 
+    const fetchTracks = async (): Promise<void> => {
+      try {
+        const out = await api<{ tracks: LiveTrack[] }>("/tracks");
+        setLiveDetails((prev) => {
+          const next = { ...prev };
+          for (const t of out.tracks ?? []) {
+            if (!(t.code in next)) continue;
+            next[t.code] = {
+              ...next[t.code],
+              fullName: t.fullName || next[t.code].fullName,
+              description: t.description || next[t.code].description,
+              careers: t.careers?.length ? t.careers : next[t.code].careers,
+              subjects: t.subjects?.length ? t.subjects : next[t.code].subjects
+            };
+          }
+          return next;
+        });
+      } catch {
+        // keep the built-in copy
+      }
+    };
+
     void fetchLatestResult();
+    void fetchTracks();
   }, []);
 
   const getColorClasses = (
@@ -261,12 +262,10 @@ export default function TrackRecommendations(): JSX.Element {
 
   /* ---------- Percentage helpers ---------- */
 
+  // Each score is the decision tree's confidence (0-100) for that strand.
   const getRelativePercentages = (allScores: Record<TrackKey, number>) => {
     const maxScore = Math.max(...Object.values(allScores));
-    const getPercentage = (score: number): number => {
-      if (!maxScore || maxScore <= 0) return 0;
-      return Math.round((score / maxScore) * 100);
-    };
+    const getPercentage = (score: number): number => Math.round(score);
     return { maxScore, getPercentage };
   };
 
@@ -319,7 +318,7 @@ export default function TrackRecommendations(): JSX.Element {
 
     doc.text(
       `Primary Track: ${
-        trackDetails[primaryTrack.track].name
+        liveDetails[primaryTrack.track].name
       } (${primaryPct}%)`,
       marginX,
       y
@@ -327,7 +326,7 @@ export default function TrackRecommendations(): JSX.Element {
     y += 7;
     doc.text(
       `Secondary Track: ${
-        trackDetails[secondaryTrack.track].name
+        liveDetails[secondaryTrack.track].name
       } (${secondaryPct}%)`,
       marginX,
       y
@@ -355,7 +354,7 @@ export default function TrackRecommendations(): JSX.Element {
     (["stem", "abm", "humss", "gas"] as TrackKey[]).forEach((key) => {
       const score = allScores[key];
       const percentage = getPercentage(score);
-      const name = trackDetails[key].name;
+      const name = liveDetails[key].name;
 
       if (y > 260) {
         doc.addPage();
@@ -397,8 +396,8 @@ export default function TrackRecommendations(): JSX.Element {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
 
-    const primaryDesc = trackDetails[primaryTrack.track].description;
-    const secondaryDesc = trackDetails[secondaryTrack.track].description;
+    const primaryDesc = liveDetails[primaryTrack.track].description;
+    const secondaryDesc = liveDetails[secondaryTrack.track].description;
 
     const wrapText = (text: string, x: number, startY: number): number => {
       const lines = doc.splitTextToSize(text, 210 - 2 * marginX);
@@ -408,7 +407,7 @@ export default function TrackRecommendations(): JSX.Element {
 
     y = wrapText(
       `• Your strongest match is ${
-        trackDetails[primaryTrack.track].name
+        liveDetails[primaryTrack.track].name
       }. ${primaryDesc}`,
       marginX,
       y
@@ -416,7 +415,7 @@ export default function TrackRecommendations(): JSX.Element {
     y += 3;
     y = wrapText(
       `• An alternative option for you is ${
-        trackDetails[secondaryTrack.track].name
+        liveDetails[secondaryTrack.track].name
       }. ${secondaryDesc}`,
       marginX,
       y
@@ -492,9 +491,9 @@ export default function TrackRecommendations(): JSX.Element {
   /* ---------- With results ---------- */
 
   const primaryTrackDetails =
-    trackDetails[assessmentResults.primaryTrack.track as TrackKey];
+    liveDetails[assessmentResults.primaryTrack.track as TrackKey];
   const secondaryTrackDetails =
-    trackDetails[assessmentResults.secondaryTrack.track as TrackKey];
+    liveDetails[assessmentResults.secondaryTrack.track as TrackKey];
 
   const allScores = assessmentResults.allScores;
   const { getPercentage } = getRelativePercentages(allScores);
@@ -677,7 +676,7 @@ export default function TrackRecommendations(): JSX.Element {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {Object.entries(allScores).map(([track, score]) => {
             const key = track as TrackKey;
-            const details = trackDetails[key];
+            const details = liveDetails[key];
             const percentage = getPercentage(score);
             const barWidth = `${Math.min(percentage, 100)}%`;
 

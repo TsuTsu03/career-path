@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { api, ApiError, errorMessage } from "../lib/api";
+import { getToken } from "../lib/session";
+import { useToast } from "../components/feedbackContext";
 
 interface StudentProfileProps {
   user: {
@@ -36,10 +39,6 @@ interface ApiProfileResponse {
   >;
 }
 
-const API_BASE_URL =
-  (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env
-    ?.VITE_API_URL ?? "http://localhost:9007";
-
 const emptyProfile: StudentProfileData = {
   firstName: "",
   lastName: "",
@@ -68,8 +67,9 @@ export default function StudentProfile({ user }: StudentProfileProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
-  const mergeProfileFromApi = (payload: ApiProfileResponse | null): void => {
+  const mergeProfileFromApi = useCallback((payload: ApiProfileResponse | null): void => {
     if (!payload) return;
 
     const raw = (payload.data ?? {}) as ApiProfileResponse["data"];
@@ -92,62 +92,50 @@ export default function StudentProfile({ user }: StudentProfileProps) {
       strengths: raw?.strengths ?? "",
       hobbies: raw?.hobbies ?? ""
     }));
-  };
+  }, [user.email]);
 
   useEffect(() => {
     const fetchProfile = async (): Promise<void> => {
       setLoading(true);
       setError(null);
 
-      const token = localStorage.getItem("access");
-      if (!token) {
+      if (!getToken()) {
         setError("Not authenticated");
         setLoading(false);
         return;
       }
 
       try {
-        const res = await fetch(`${API_BASE_URL}/students/me`, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-
-        if (res.status === 404) {
-          setProfile((prev) => ({
-            ...prev,
-            email: user.email
-          }));
-          setIsNewProfile(true);
-          setIsEditing(true);
-          setLoading(false);
-          return;
-        }
-
-        if (!res.ok) {
-          throw new Error(`Failed to load profile (${res.status})`);
-        }
-
-        const body = (await res.json()) as ApiProfileResponse;
+        const body = await api<ApiProfileResponse>("/students/me");
         mergeProfileFromApi(body);
-
         setIsNewProfile(false);
         setIsEditing(false);
       } catch (err: unknown) {
-        console.error(err);
-        if (err instanceof Error) {
-          setError(err.message);
+        if (err instanceof ApiError && err.status === 404) {
+          // First visit: start a new profile with the account's details.
+          setIsNewProfile(true);
+          setIsEditing(true);
+          try {
+            const me = await api<{ user: { studentId: string | null } }>("/auth/me");
+            setProfile((prev) => ({
+              ...prev,
+              email: user.email,
+              studentId: me.user.studentId ?? ""
+            }));
+          } catch {
+            setProfile((prev) => ({ ...prev, email: user.email }));
+          }
         } else {
-          setError("Failed to load profile");
+          setError(errorMessage(err, "Failed to load profile"));
+          setIsEditing(true);
         }
-        setIsEditing(true);
       } finally {
         setLoading(false);
       }
     };
 
     void fetchProfile();
-  }, [user.email]);
+  }, [user.email, mergeProfileFromApi]);
 
   const handleChange = (
     field: keyof StudentProfileData,
@@ -160,60 +148,35 @@ export default function StudentProfile({ user }: StudentProfileProps) {
     setSaving(true);
     setError(null);
 
-    const token = localStorage.getItem("access");
-    if (!token) {
-      setError("Not authenticated");
-      setSaving(false);
-      return;
-    }
+    // Email and student ID come from the account and are not sent.
+    const payload = {
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      gender: profile.gender,
+      birthDate: profile.birthDate || undefined,
+      contactNumber: profile.contactNumber,
+      address: profile.address,
+      guardianName: profile.guardianName,
+      guardianContact: profile.guardianContact,
+      interests: profile.interests,
+      strengths: profile.strengths,
+      hobbies: profile.hobbies,
+      gradeLevel: profile.grade,
+      section: profile.section
+    };
 
     try {
-      const res = await fetch(`${API_BASE_URL}/students/me`, {
+      const body = await api<ApiProfileResponse>("/students/me", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(profile)
+        body: JSON.stringify(payload)
       });
-
-      const contentType = res.headers.get("content-type") ?? "";
-      const isJson = contentType.includes("application/json");
-
-      const body = isJson ? await res.json() : await res.text();
-
-      if (!res.ok) {
-        if (
-          isJson &&
-          typeof body === "object" &&
-          body !== null &&
-          "message" in body
-        ) {
-          throw new Error(
-            String(
-              (body as ApiProfileResponse).message ??
-                `Failed to save profile (${res.status})`
-            )
-          );
-        }
-
-        throw new Error(
-          typeof body === "string"
-            ? body
-            : `Failed to save profile (${res.status})`
-        );
-      }
+      if (body?.data) mergeProfileFromApi(body);
 
       setIsNewProfile(false);
       setIsEditing(false);
-      alert("Profile updated successfully!");
+      toast("Profile updated successfully!");
     } catch (err: unknown) {
-      console.error("Save profile error:", err);
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("Failed to save profile");
-      }
+      setError(errorMessage(err, "Failed to save profile"));
     } finally {
       setSaving(false);
     }
@@ -300,8 +263,8 @@ export default function StudentProfile({ user }: StudentProfileProps) {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-gray-700 mb-2">First Name</label>
-                <input
+                <label htmlFor="profile-firstName" className="block text-gray-700 mb-2">First Name</label>
+                <input id="profile-firstName"
                   type="text"
                   value={profile.firstName}
                   onChange={(e) => handleChange("firstName", e.target.value)}
@@ -310,8 +273,8 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div>
-                <label className="block text-gray-700 mb-2">Last Name</label>
-                <input
+                <label htmlFor="profile-lastName" className="block text-gray-700 mb-2">Last Name</label>
+                <input id="profile-lastName"
                   type="text"
                   value={profile.lastName}
                   onChange={(e) => handleChange("lastName", e.target.value)}
@@ -320,8 +283,8 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div>
-                <label className="block text-gray-700 mb-2">Gender</label>
-                <select
+                <label htmlFor="profile-gender" className="block text-gray-700 mb-2">Gender</label>
+                <select id="profile-gender"
                   value={profile.gender}
                   onChange={(e) => handleChange("gender", e.target.value)}
                   disabled={!isEditing}
@@ -334,8 +297,8 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 </select>
               </div>
               <div>
-                <label className="block text-gray-700 mb-2">Birth Date</label>
-                <input
+                <label htmlFor="profile-birthDate" className="block text-gray-700 mb-2">Birth Date</label>
+                <input id="profile-birthDate"
                   type="date"
                   value={profile.birthDate}
                   onChange={(e) => handleChange("birthDate", e.target.value)}
@@ -352,10 +315,10 @@ export default function StudentProfile({ user }: StudentProfileProps) {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-gray-700 mb-2">
+                <label htmlFor="profile-email" className="block text-gray-700 mb-2">
                   Email Address
                 </label>
-                <input
+                <input id="profile-email"
                   type="email"
                   value={profile.email}
                   disabled
@@ -363,10 +326,10 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div>
-                <label className="block text-gray-700 mb-2">
+                <label htmlFor="profile-contactNumber" className="block text-gray-700 mb-2">
                   Contact Number
                 </label>
-                <input
+                <input id="profile-contactNumber"
                   type="tel"
                   value={profile.contactNumber}
                   onChange={(e) =>
@@ -377,8 +340,8 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-gray-700 mb-2">Address</label>
-                <textarea
+                <label htmlFor="profile-address" className="block text-gray-700 mb-2">Address</label>
+                <textarea id="profile-address"
                   value={profile.address}
                   onChange={(e) => handleChange("address", e.target.value)}
                   disabled={!isEditing}
@@ -395,10 +358,10 @@ export default function StudentProfile({ user }: StudentProfileProps) {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-gray-700 mb-2">
+                <label htmlFor="profile-guardianName" className="block text-gray-700 mb-2">
                   Guardian Name
                 </label>
-                <input
+                <input id="profile-guardianName"
                   type="text"
                   value={profile.guardianName}
                   onChange={(e) => handleChange("guardianName", e.target.value)}
@@ -407,10 +370,10 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div>
-                <label className="block text-gray-700 mb-2">
+                <label htmlFor="profile-guardianContact" className="block text-gray-700 mb-2">
                   Guardian Contact
                 </label>
-                <input
+                <input id="profile-guardianContact"
                   type="tel"
                   value={profile.guardianContact}
                   onChange={(e) =>
@@ -429,10 +392,10 @@ export default function StudentProfile({ user }: StudentProfileProps) {
             </h3>
             <div className="space-y-6">
               <div>
-                <label className="block text-gray-700 mb-2">
+                <label htmlFor="profile-interests" className="block text-gray-700 mb-2">
                   Interests & Passions
                 </label>
-                <textarea
+                <textarea id="profile-interests"
                   value={profile.interests}
                   onChange={(e) => handleChange("interests", e.target.value)}
                   disabled={!isEditing}
@@ -441,8 +404,8 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div>
-                <label className="block text-gray-700 mb-2">Strengths</label>
-                <textarea
+                <label htmlFor="profile-strengths" className="block text-gray-700 mb-2">Strengths</label>
+                <textarea id="profile-strengths"
                   value={profile.strengths}
                   onChange={(e) => handleChange("strengths", e.target.value)}
                   disabled={!isEditing}
@@ -451,10 +414,10 @@ export default function StudentProfile({ user }: StudentProfileProps) {
                 />
               </div>
               <div>
-                <label className="block text-gray-700 mb-2">
+                <label htmlFor="profile-hobbies" className="block text-gray-700 mb-2">
                   Hobbies & Activities
                 </label>
-                <textarea
+                <textarea id="profile-hobbies"
                   value={profile.hobbies}
                   onChange={(e) => handleChange("hobbies", e.target.value)}
                   disabled={!isEditing}
