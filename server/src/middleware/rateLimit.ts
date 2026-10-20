@@ -8,7 +8,7 @@
 // its own counters, so these limits slow down abuse rather than give an exact
 // global count. A shared store (e.g. Redis) would make them exact.
 import type { Request } from "express";
-import rateLimit from "express-rate-limit";
+import { rateLimit } from "express-rate-limit";
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
 const ONE_HOUR = 60 * 60 * 1000;

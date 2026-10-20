@@ -62,7 +62,7 @@ Everything in P0 and P1 is done, plus most of P2. Checked with type checks, lint
 | 7 | `client/src/data/aptitudeQuestions.ts` | The **answer key** (`correctOptionId`) ships to the browser, so any student can open DevTools and see every correct answer. | Serve questions from the server without the answers, and score only on the server. |
 | 8 | `server/src/controllers/aptitudeAssessmentController.ts:72` | The server accepts any list of question IDs. A student can send all 30 questions in a domain, or the same question twice. Domain scores can then reach 30, but the model was trained on a 0 to 15 range (`MAX_DOMAIN_SCORE = 15`). | Have the server issue the question set and check that exactly 15 unique questions per domain come back. Also cap each domain at 15. |
 | 9 | All `/auth/*` routes | No rate limiting. Passwords can be brute-forced, and `/register` and `/resend-verification` can burn the Brevo email quota. | Add `express-rate-limit` on login, register and resend. |
-| 10 | `server/src/app.ts:19` | `cors()` allows every origin, and there are no security headers. | Allow only the client domain and add `helmet`. |
+| 10 | `server/src/app.ts:19` | `cors()` allows every origin, and there are no security headers. | Allow only the client domain and add security headers. |
 
 ### Missing basic account flows
 

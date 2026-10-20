@@ -1,9 +1,9 @@
 // server/src/app.ts
 import express from "express";
 import cors, { type CorsOptions } from "cors";
-import helmet from "helmet";
 import mongoose from "mongoose";
 import { connectDB, requireDb } from "./config/db.js"; // <-- walang .js sa TS
+import { securityHeaders } from "./middleware/securityHeaders.js";
 
 import authRoutes from "./routes/auth.js";
 import studentRoutes from "./routes/students.js";
@@ -52,7 +52,8 @@ const corsOptions: CorsOptions = {
 // see the real client IP instead of the proxy's.
 app.set("trust proxy", 1);
 
-app.use(helmet());
+app.disable("x-powered-by");
+app.use(securityHeaders);
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "100kb" }));
 

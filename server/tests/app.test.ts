@@ -33,7 +33,7 @@ describe("CORS", () => {
 });
 
 describe("security headers and errors", () => {
-  it("sends helmet headers and hides x-powered-by", async () => {
+  it("sends security headers and hides x-powered-by", async () => {
     const res = await request(app).get("/health");
     expect(res.headers["x-content-type-options"]).toBe("nosniff");
     expect(res.headers["x-powered-by"]).toBeUndefined();
