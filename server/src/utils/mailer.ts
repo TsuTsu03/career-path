@@ -11,6 +11,11 @@ function createTransporter() {
     host: process.env.EMAIL_HOST || "smtp-relay.brevo.com",
     port,
     secure: port === 465,
+    // Fail fast instead of hanging the request (and the serverless function)
+    // when the SMTP relay is unreachable or slow.
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000,
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
